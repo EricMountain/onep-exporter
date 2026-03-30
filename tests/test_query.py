@@ -103,10 +103,10 @@ def test_query_list_auto_identity(monkeypatch, tmp_path):
 
     # configure load_config to return an age config pointing at some item
     cfg = {"age": {"pass_item": "dummy"}}
-    monkeypatch.setattr("onep_exporter.exporter.load_config", lambda: cfg)
+    monkeypatch.setattr("onep_exporter.config.load_config", lambda: cfg)
     # stub keychain to return nothing so the code falls through to 1Password
     monkeypatch.setattr(
-        "onep_exporter.exporter._get_passphrase_from_keychain", lambda service, username: None)
+        "onep_exporter.keychain.get_passphrase_from_keychain", lambda service, username: None)
     # stub the exporter method to return our private key when requested
     def fake_get(self, item_ref, field_name=None):
         if field_name == "age_private_key":
@@ -158,7 +158,7 @@ def test_query_list_keychain_private_key(monkeypatch, tmp_path):
     monkeypatch.delenv("AGE_IDENTITIES", raising=False)
 
     # stub load_config to return a minimal config (no pass_item — no 1Password)
-    monkeypatch.setattr("onep_exporter.exporter.load_config", lambda: {"age": {}})
+    monkeypatch.setattr("onep_exporter.config.load_config", lambda: {"age": {}})
 
     # stub _get_passphrase_from_keychain to return the private key for the
     # "age_private_key" account, simulating keychain storage
@@ -167,7 +167,7 @@ def test_query_list_keychain_private_key(monkeypatch, tmp_path):
             return priv
         return None
     monkeypatch.setattr(
-        "onep_exporter.exporter._get_passphrase_from_keychain", fake_keychain)
+        "onep_exporter.keychain.get_passphrase_from_keychain", fake_keychain)
 
     res = query_list_titles(enc, "keychain")
     assert res == ["keychain-item"]
@@ -175,7 +175,7 @@ def test_query_list_keychain_private_key(monkeypatch, tmp_path):
 
 def test_resolve_decrypt_credentials_order(monkeypatch, tmp_path):
     """Verify the local-first resolution order of _resolve_decrypt_credentials."""
-    from onep_exporter.exporter import _resolve_decrypt_credentials
+    from onep_exporter.encryption import resolve_decrypt_credentials as _resolve_decrypt_credentials
     import os
 
     # 1. env var AGE_IDENTITIES takes priority
@@ -199,7 +199,7 @@ def test_resolve_decrypt_credentials_order(monkeypatch, tmp_path):
             return "AGE-SECRET-KEY-FAKE"
         return None
     monkeypatch.setattr(
-        "onep_exporter.exporter._get_passphrase_from_keychain", fake_keychain)
+        "onep_exporter.keychain.get_passphrase_from_keychain", fake_keychain)
     def fake_op_get(self, item_ref, field_name=None):
         nonlocal called_1p
         called_1p = True
@@ -220,7 +220,7 @@ def test_resolve_decrypt_credentials_order(monkeypatch, tmp_path):
     def empty_keychain(service, username):
         return None
     monkeypatch.setattr(
-        "onep_exporter.exporter._get_passphrase_from_keychain", empty_keychain)
+        "onep_exporter.keychain.get_passphrase_from_keychain", empty_keychain)
     def fake_op_get2(self, item_ref, field_name=None):
         if field_name == "age_private_key":
             return "AGE-SECRET-KEY-FROM-1P"
@@ -237,7 +237,7 @@ def test_resolve_decrypt_credentials_order(monkeypatch, tmp_path):
 
     # 5. returns (None, None) when nothing is available
     monkeypatch.setattr(
-        "onep_exporter.exporter._get_passphrase_from_keychain", empty_keychain)
+        "onep_exporter.keychain.get_passphrase_from_keychain", empty_keychain)
     def fake_op_empty(self, item_ref, field_name=None):
         return None
     monkeypatch.setattr(

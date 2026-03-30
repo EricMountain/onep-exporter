@@ -3,6 +3,10 @@ from pathlib import Path
 
 import pytest
 import onep_exporter.exporter as exporter_module
+import onep_exporter.encryption as encryption_module
+import onep_exporter.keychain as keychain_module
+import onep_exporter.config as config_module
+import onep_exporter.doctor as doctor_module
 
 
 def test_get_item_field_value(monkeypatch):
@@ -246,7 +250,7 @@ def test_get_passphrase_from_keychain_security_fallback(monkeypatch):
             return 0, "sec-pass\n", ""
         raise RuntimeError("unexpected")
 
-    monkeypatch.setattr(exporter_module, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(keychain_module, "run_cmd", fake_run_cmd)
     import sys
     monkeypatch.setattr(sys, "platform", "darwin")
     val = exporter_module._get_passphrase_from_keychain("svc", "acct")
@@ -262,7 +266,7 @@ def test_init_setup_stores(monkeypatch):
 
     monkeypatch.setattr(exporter_module.OpExporter,
                         "store_passphrase_in_1password", fake_store_1p)
-    monkeypatch.setattr(exporter_module, "_store_passphrase_in_keychain",
+    monkeypatch.setattr(keychain_module, "store_passphrase_in_keychain",
                         lambda s, u, p: calls.update({"kc": True}))
 
     pw = exporter_module.init_setup(passphrase="xyz", generate=False,
@@ -405,7 +409,7 @@ def test_passphrase_mismatch_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(exporter_module.OpExporter,
                         "get_item_field_value", lambda self, item, field: "onepw")
     monkeypatch.setattr(
-        exporter_module, "_get_passphrase_from_keychain", lambda s, u: "kc-different")
+        keychain_module, "get_passphrase_from_keychain", lambda s, u: "kc-different")
 
     # fake op vault list
     monkeypatch.setattr(exporter_module, "run_cmd", lambda cmd, capture_output=True, check=True, input=None: (
@@ -605,7 +609,7 @@ def test_sync_passphrase_from_1password_to_keychain(monkeypatch, tmp_path):
     monkeypatch.setattr(exporter_module.OpExporter,
                         "get_item_field_value", lambda self, item, field: "sync-me")
     monkeypatch.setattr(
-        exporter_module, "_get_passphrase_from_keychain", lambda s, u: None)
+        keychain_module, "get_passphrase_from_keychain", lambda s, u: None)
 
     stored = {"kc": False}
 
@@ -613,7 +617,7 @@ def test_sync_passphrase_from_1password_to_keychain(monkeypatch, tmp_path):
         stored["kc"] = (srv, user, pw)
 
     monkeypatch.setattr(
-        exporter_module, "_store_passphrase_in_keychain", fake_store_kc)
+        keychain_module, "store_passphrase_in_keychain", fake_store_kc)
 
     # fake run_cmd to allow vault listing (encryption is handled by Popen now)
     def fake_run_cmd(cmd, capture_output=True, check=True, input=None):
@@ -641,9 +645,9 @@ def test_sync_passphrase_from_1password_to_keychain(monkeypatch, tmp_path):
 
 def test_doctor_detects_missing_op(monkeypatch, capsys):
     # op missing -> critical failure
-    monkeypatch.setattr(exporter_module, "ensure_tool",
+    monkeypatch.setattr(doctor_module, "ensure_tool",
                         lambda name: False if name == "op" else True)
-    monkeypatch.setattr(exporter_module, "load_config", lambda: {})
+    monkeypatch.setattr(doctor_module, "load_config", lambda: {})
     ok = exporter_module.doctor()
     captured = capsys.readouterr()
     assert ok is False
@@ -654,9 +658,9 @@ def test_doctor_detects_missing_op(monkeypatch, capsys):
 
 def test_doctor_detects_missing_age_tool_from_config(monkeypatch, capsys):
     # config requests age but `age` binary unavailable
-    monkeypatch.setattr(exporter_module, "ensure_tool",
+    monkeypatch.setattr(doctor_module, "ensure_tool",
                         lambda name: False if name == "age" else True)
-    monkeypatch.setattr(exporter_module, "load_config",
+    monkeypatch.setattr(doctor_module, "load_config",
                         lambda: {"encrypt": "age", "age": {}})
     ok = exporter_module.doctor()
     captured = capsys.readouterr()
@@ -667,9 +671,9 @@ def test_doctor_detects_missing_age_tool_from_config(monkeypatch, capsys):
 
 
 def test_doctor_ok_with_valid_config_and_tools(monkeypatch, capsys):
-    monkeypatch.setattr(exporter_module, "ensure_tool", lambda name: True)
+    monkeypatch.setattr(doctor_module, "ensure_tool", lambda name: True)
     monkeypatch.setenv("BACKUP_PASSPHRASE", "pw123")
-    monkeypatch.setattr(exporter_module, "load_config", lambda: {
+    monkeypatch.setattr(doctor_module, "load_config", lambda: {
                         "encrypt": "age", "formats": ["json"], "age": {"pass_source": "env"}})
     ok = exporter_module.doctor()
     captured = capsys.readouterr()
@@ -685,8 +689,8 @@ def test_doctor_tools_section_reports_presence_and_absence(monkeypatch, capsys):
         # report core tools + requested ones as present; leave others missing
         return name in ("op", "age", "gpg", "apt")
 
-    monkeypatch.setattr(exporter_module, "ensure_tool", fake_ensure)
-    monkeypatch.setattr(exporter_module, "load_config", lambda: {})
+    monkeypatch.setattr(doctor_module, "ensure_tool", fake_ensure)
+    monkeypatch.setattr(doctor_module, "load_config", lambda: {})
 
     ok = exporter_module.doctor()
     captured = capsys.readouterr()
@@ -712,8 +716,8 @@ def test_doctor_tools_mark_config_required_tool_missing(monkeypatch, capsys):
         # pretend apt is available for suggestion, but `age` itself is missing
         return n == "apt" or n == "op"
 
-    monkeypatch.setattr(exporter_module, "ensure_tool", fake_ensure)
-    monkeypatch.setattr(exporter_module, "load_config",
+    monkeypatch.setattr(doctor_module, "ensure_tool", fake_ensure)
+    monkeypatch.setattr(doctor_module, "load_config",
                         lambda: {"encrypt": "age", "age": {}})
 
     ok = exporter_module.doctor()
@@ -733,8 +737,8 @@ def test_doctor_includes_security_for_darwin(monkeypatch, capsys):
 
     def fake_ensure(name):
         return name in ("op", "age")
-    monkeypatch.setattr(exporter_module, "ensure_tool", fake_ensure)
-    monkeypatch.setattr(exporter_module, "load_config", lambda: {})
+    monkeypatch.setattr(doctor_module, "ensure_tool", fake_ensure)
+    monkeypatch.setattr(doctor_module, "load_config", lambda: {})
 
     ok = exporter_module.doctor()
     captured = capsys.readouterr()
@@ -746,8 +750,8 @@ def test_doctor_includes_security_for_darwin(monkeypatch, capsys):
 def test_doctor_detects_age_conflict(monkeypatch, capsys):
     # configuration that wrongly specifies both a passphrase source and
     # explicit recipients should be flagged as an error in the doctor output
-    monkeypatch.setattr(exporter_module, "ensure_tool", lambda name: True)
-    monkeypatch.setattr(exporter_module, "load_config", lambda: {
+    monkeypatch.setattr(doctor_module, "ensure_tool", lambda name: True)
+    monkeypatch.setattr(doctor_module, "load_config", lambda: {
         "encrypt": "age",
         "age": {"pass_source": "env", "recipients": "age1foo"},
     })

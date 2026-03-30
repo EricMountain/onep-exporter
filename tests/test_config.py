@@ -120,12 +120,14 @@ def test_configure_interactive_generates_age_key_and_stores(monkeypatch, tmp_pat
     in a single 1Password Secure Note item, and include the public recipient in config."""
     import builtins
     import onep_exporter.exporter as exporter_module
+    import onep_exporter.encryption as encryption_module
+    import onep_exporter.keychain as keychain_module
 
     cfg_path = tmp_path / "cfg.json"
     monkeypatch.setenv("ONEP_EXPORTER_CONFIG", str(cfg_path))
 
     # pretend required tools are present
-    monkeypatch.setattr(exporter_module, "ensure_tool", lambda name: True)
+    monkeypatch.setattr(encryption_module, "ensure_tool", lambda name: True)
 
     # fake age-keygen output (private key block + public recipient)
     private_block = "-----BEGIN AGE PRIVATE KEY-----\nprivate-body\n-----END AGE PRIVATE KEY-----"
@@ -137,7 +139,9 @@ def test_configure_interactive_generates_age_key_and_stores(monkeypatch, tmp_pat
             return 0, age_out, ""
         return 0, "{}", ""
 
-    monkeypatch.setattr(exporter_module, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(encryption_module, "run_cmd", fake_run_cmd)
+    # prevent real keychain writes
+    monkeypatch.setattr(keychain_module, "run_cmd", fake_run_cmd)
 
     upserted = {}
 
@@ -192,10 +196,12 @@ def test_configure_interactive_parses_commented_public_and_secret_token(monkeypa
     and stores both in a single 1Password item via upsert."""
     import builtins
     import onep_exporter.exporter as exporter_module
+    import onep_exporter.encryption as encryption_module
+    import onep_exporter.keychain as keychain_module
 
     cfg_path = tmp_path / "cfg2.json"
     monkeypatch.setenv("ONEP_EXPORTER_CONFIG", str(cfg_path))
-    monkeypatch.setattr(exporter_module, "ensure_tool", lambda name: True)
+    monkeypatch.setattr(encryption_module, "ensure_tool", lambda name: True)
 
     # variant A: commented public key line with private block
     pub_a = "age1commentedpub"
@@ -213,7 +219,8 @@ def test_configure_interactive_parses_commented_public_and_secret_token(monkeypa
             return 0, next(seq), ""
         return 0, "{}", ""
 
-    monkeypatch.setattr(exporter_module, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(encryption_module, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(keychain_module, "run_cmd", fake_run_cmd)
 
     upserted_all = []
 
@@ -288,16 +295,20 @@ def test_default_private_key_title_includes_username(monkeypatch, tmp_path):
     import getpass
     import onep_exporter.exporter as exporter_module
 
+    import onep_exporter.encryption as encryption_module
+    import onep_exporter.keychain as keychain_module
+
     cfg_path = tmp_path / "cfg3.json"
     monkeypatch.setenv("ONEP_EXPORTER_CONFIG", str(cfg_path))
-    monkeypatch.setattr(exporter_module, "ensure_tool", lambda name: True)
+    monkeypatch.setattr(encryption_module, "ensure_tool", lambda name: True)
 
     # fake age-keygen output
     public_recipient = "age1defaultpub"
     age_out = "-----BEGIN AGE PRIVATE KEY-----\npriv-default\n-----END AGE PRIVATE KEY-----\npublic key: " + \
         public_recipient + "\n"
-    monkeypatch.setattr(exporter_module, "run_cmd", lambda cmd, capture_output=True,
-                        check=True, input=None: (0, age_out, "") if cmd[0] == "age-keygen" else (0, "{}", ""))
+    fake_run_cmd = lambda cmd, capture_output=True, check=True, input=None: (0, age_out, "") if cmd[0] == "age-keygen" else (0, "{}", "")
+    monkeypatch.setattr(encryption_module, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(keychain_module, "run_cmd", fake_run_cmd)
 
     captured = {"title": None}
 
@@ -344,10 +355,12 @@ def test_configure_interactive_reuses_existing_secrets(monkeypatch, tmp_path):
     asked whether to reuse them. Choosing 'yes' must NOT overwrite anything."""
     import builtins
     import onep_exporter.exporter as exporter_module
+    import onep_exporter.encryption as encryption_module
+    import onep_exporter.keychain as keychain_module
 
     cfg_path = tmp_path / "cfg4.json"
     monkeypatch.setenv("ONEP_EXPORTER_CONFIG", str(cfg_path))
-    monkeypatch.setattr(exporter_module, "ensure_tool", lambda name: True)
+    monkeypatch.setattr(encryption_module, "ensure_tool", lambda name: True)
 
     # no age-keygen call should happen
     def fake_run_cmd(cmd, capture_output=True, check=True, input=None):
@@ -356,7 +369,8 @@ def test_configure_interactive_reuses_existing_secrets(monkeypatch, tmp_path):
                 "age-keygen should not be called when reusing")
         return 0, "{}", ""
 
-    monkeypatch.setattr(exporter_module, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(encryption_module, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(keychain_module, "run_cmd", fake_run_cmd)
 
     upserted = {}
 
@@ -404,10 +418,12 @@ def test_configure_interactive_overwrites_existing_secrets(monkeypatch, tmp_path
     and stored, but existing values must NOT be displayed."""
     import builtins
     import onep_exporter.exporter as exporter_module
+    import onep_exporter.encryption as encryption_module
+    import onep_exporter.keychain as keychain_module
 
     cfg_path = tmp_path / "cfg5.json"
     monkeypatch.setenv("ONEP_EXPORTER_CONFIG", str(cfg_path))
-    monkeypatch.setattr(exporter_module, "ensure_tool", lambda name: True)
+    monkeypatch.setattr(encryption_module, "ensure_tool", lambda name: True)
 
     public_recipient = "age1newpub"
     age_out = "AGE-SECRET-KEY-1NEWKEY\npublic key: " + public_recipient + "\n"
@@ -417,7 +433,8 @@ def test_configure_interactive_overwrites_existing_secrets(monkeypatch, tmp_path
             return 0, age_out, ""
         return 0, "{}", ""
 
-    monkeypatch.setattr(exporter_module, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(encryption_module, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(keychain_module, "run_cmd", fake_run_cmd)
 
     upserted = {}
 

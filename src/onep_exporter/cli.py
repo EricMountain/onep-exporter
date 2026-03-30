@@ -1,7 +1,14 @@
 import argparse
 import sys
 import os
-from .exporter import run_backup, verify_manifest, load_config, configure_interactive, init_setup, OpExporter, doctor, sync_keychain
+
+from .config import load_config, configure_interactive, init_setup
+from .doctor import doctor
+from .exporter import run_backup, OpExporter
+from .keychain import sync_keychain
+from .query import query_list_titles, query_get_item
+from .utils import verify_manifest, item_field_value
+from .templates import item_to_md
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -116,6 +123,15 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _setup_query_env(args) -> None:
+    """Set environment variables for age decryption based on CLI flags."""
+    if getattr(args, "age_passphrase", None) is not None:
+        os.environ["BACKUP_PASSPHRASE"] = args.age_passphrase
+    identities = getattr(args, "age_identities", None)
+    if identities:
+        os.environ["AGE_IDENTITIES"] = os.pathsep.join(identities)
+
+
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -123,43 +139,36 @@ def main(argv=None):
     if args.cmd == "backup":
         # merge saved config with CLI args (CLI overrides saved config)
         cfg = load_config()
-
-        output_base = args.output if hasattr(
-            args, "output") else cfg.get("output_base", "backups")
-
-        if hasattr(args, "formats"):
-            formats = args.formats.split(",")
-        else:
-            formats = cfg.get("formats", ["json", "md"]) or ["json", "md"]
-
-        encrypt = args.encrypt if hasattr(
-            args, "encrypt") else cfg.get("encrypt", "none")
-
-        if hasattr(args, "no_attachments"):
-            download_attachments = not args.no_attachments
-        else:
-            download_attachments = cfg.get("download_attachments", True)
-
-        quiet = args.quiet if hasattr(
-            args, "quiet") else cfg.get("quiet", False)
-
         age_cfg = cfg.get("age", {})
-        age_pass_source = args.age_pass_source if hasattr(
-            args, "age_pass_source") else age_cfg.get("pass_source", "prompt")
-        age_pass_item = args.age_pass_item if hasattr(
-            args, "age_pass_item") else age_cfg.get("pass_item")
-        age_pass_field = args.age_pass_field if hasattr(
-            args, "age_pass_field") else age_cfg.get("pass_field", "passphrase")
-        age_recipients = args.age_recipients if hasattr(
-            args, "age_recipients") else age_cfg.get("recipients", "")
-        age_use_yubikey = args.age_use_yubikey if hasattr(
-            args, "age_use_yubikey") else age_cfg.get("use_yubikey", False)
-        sync_passphrase_from_1password = args.sync_passphrase_from_1password if hasattr(
-            args, "sync_passphrase_from_1password") else False
-        age_keychain_service = args.age_keychain_service if hasattr(
-            args, "age_keychain_service") else age_cfg.get("keychain_service", "1p-exporter")
-        age_keychain_username = args.age_keychain_username if hasattr(
-            args, "age_keychain_username") else age_cfg.get("keychain_username", "backup")
+
+        # Table-driven merge: (cli_attr, config_key, default, transform)
+        # When the CLI flag uses argparse.SUPPRESS, hasattr() is False if
+        # the user did not supply it — fall back to config then default.
+        def _opt(attr, cfg_val, default=None, transform=None):
+            if hasattr(args, attr):
+                v = getattr(args, attr)
+            else:
+                v = cfg_val if cfg_val is not None else default
+            return transform(v) if transform else v
+
+        output_base = _opt("output", cfg.get("output_base"), "backups")
+        formats = _opt("formats", cfg.get("formats"), ["json", "md"],
+                        lambda v: v.split(",") if isinstance(v, str) else v)
+        encrypt = _opt("encrypt", cfg.get("encrypt"), "none")
+        download_attachments = (
+            not args.no_attachments if hasattr(args, "no_attachments")
+            else cfg.get("download_attachments", True)
+        )
+        quiet = _opt("quiet", cfg.get("quiet"), False)
+
+        age_pass_source = _opt("age_pass_source", age_cfg.get("pass_source"), "prompt")
+        age_pass_item = _opt("age_pass_item", age_cfg.get("pass_item"))
+        age_pass_field = _opt("age_pass_field", age_cfg.get("pass_field"), "passphrase")
+        age_recipients = _opt("age_recipients", age_cfg.get("recipients"), "")
+        age_use_yubikey = _opt("age_use_yubikey", age_cfg.get("use_yubikey"), False)
+        sync_passphrase_from_1password = _opt("sync_passphrase_from_1password", None, False)
+        age_keychain_service = _opt("age_keychain_service", age_cfg.get("keychain_service"), "1p-exporter")
+        age_keychain_username = _opt("age_keychain_username", age_cfg.get("keychain_username"), "backup")
 
         run_backup(
             output_base=output_base,
@@ -209,41 +218,18 @@ def main(argv=None):
         ok = sync_keychain()
         sys.exit(0 if ok else 1)
     elif args.cmd == "query":
-        # only subcommand supported so far is ``list``
         if args.query_cmd == "list":
-            # perform the search and print matching titles
-            from .exporter import query_list_titles
-
-            # allow quick CLI-based provision of decryption helpers; these
-            # simply set the environment variables that ``query_list_titles``
-            # respects.  environment has higher precedence than searching for
-            # identities in the user's home config.
-            if hasattr(args, "age_passphrase") and args.age_passphrase is not None:
-                os.environ["BACKUP_PASSPHRASE"] = args.age_passphrase
-            if hasattr(args, "age_identities") and args.age_identities:
-                # join with pathsep so the function can split them later
-                os.environ["AGE_IDENTITIES"] = os.pathsep.join(args.age_identities)
-
+            _setup_query_env(args)
             try:
-                # first argument is path (from --dir), second is regexp pattern
                 matches = query_list_titles(args.dir, args.pattern)
             except Exception as e:
                 print(f"error: {e}")
                 sys.exit(1)
-
             for t in matches:
                 print(t)
-            # exit code 0 even if no matches; you can pipe into ``wc -l`` etc
             sys.exit(0)
         elif args.query_cmd == "get":
-            from .exporter import query_get_item
-            from .templates import item_to_md
-
-            if hasattr(args, "age_passphrase") and args.age_passphrase is not None:
-                os.environ["BACKUP_PASSPHRASE"] = args.age_passphrase
-            if hasattr(args, "age_identities") and args.age_identities:
-                os.environ["AGE_IDENTITIES"] = os.pathsep.join(args.age_identities)
-
+            _setup_query_env(args)
             try:
                 item = query_get_item(args.dir, args.item)
             except (KeyError, ValueError) as e:
@@ -254,12 +240,7 @@ def main(argv=None):
                 sys.exit(1)
 
             if args.field:
-                fields = item.get("fields") or []
-                value = None
-                for f in fields:
-                    if f.get("name") == args.field or f.get("label") == args.field:
-                        value = f.get("value")
-                        break
+                value = item_field_value(item, args.field)
                 if value is None:
                     print(f"error: field {args.field!r} not found in item")
                     sys.exit(1)

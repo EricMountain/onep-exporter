@@ -3,7 +3,7 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import List, Optional, Tuple
 
 
 import re
@@ -130,3 +130,37 @@ def check_age_version() -> None:
             f">= {req} is required for '-i -' (stdin identity) support. "
             f"Upgrade with: brew upgrade age"
         )
+
+
+def item_field_value(item: dict, field_name: str) -> Optional[str]:
+    """Extract a field value from a 1Password item dict by label or name."""
+    for f in (item.get("fields") or []):
+        if f.get("label") == field_name or f.get("name") == field_name:
+            val = f.get("value")
+            if isinstance(val, str) and val:
+                return val
+    return None
+
+
+def verify_manifest(manifest_path: str) -> bool:
+    """Verify that all files listed in a manifest exist and match their checksums."""
+    p = Path(manifest_path)
+    if not p.exists():
+        print(f"manifest not found: {manifest_path}")
+        return False
+    data = json.loads(p.read_text(encoding="utf-8"))
+    base = p.parent
+    ok = True
+    for f in data.get("files", []):
+        path = base / f["path"]
+        if not path.exists():
+            print(f"missing file: {path}")
+            ok = False
+            continue
+        sha = sha256_file(path)
+        if sha != f.get("sha256"):
+            print(
+                f"sha mismatch: {path} (expected {f.get('sha256')}, got {sha})")
+            ok = False
+    print("manifest verification:", "OK" if ok else "FAILED")
+    return ok
