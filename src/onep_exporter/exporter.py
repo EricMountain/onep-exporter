@@ -14,6 +14,18 @@ from datetime import datetime, UTC
 from pathlib import Path
 from typing import List, Optional, Union
 
+from rich.console import Console
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    MofNCompleteColumn,
+    TimeElapsedColumn,
+)
+from rich.panel import Panel
+from rich.table import Table
+
 from .utils import run_cmd, write_json, sha256_file, ensure_tool, CommandError
 from .templates import vault_to_md
 from .encryption import (
@@ -274,6 +286,26 @@ class OpExporter:
         return token
 
 
+def _make_progress(quiet: bool) -> Progress:
+    """Build a rich Progress bar (or a no-op equivalent when quiet)."""
+    if quiet:
+        # Return a Progress that renders nothing
+        return Progress(
+            TextColumn(""),
+            transient=True,
+            disable=True,
+        )
+    return Progress(
+        SpinnerColumn("dots"),
+        TextColumn("[bold blue]{task.description}"),
+        BarColumn(bar_width=30),
+        MofNCompleteColumn(),
+        TextColumn("·"),
+        TimeElapsedColumn(),
+        transient=False,
+    )
+
+
 def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "md"), encrypt: str = "none", download_attachments: bool = True, quiet: bool = False, age_pass_source: str = "prompt", age_pass_item: Optional[str] = None, age_pass_field: str = "passphrase", age_recipients: str = "", age_use_yubikey: bool = False, sync_passphrase_from_1password: bool = False, age_keychain_service: str = "1p-exporter", age_keychain_username: str = "backup") -> Path:
     output_base = Path(output_base)
     # create output directory right away; the encrypted archive is written to
@@ -281,6 +313,7 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
     # exist or the subprocess will fail with "no such file or directory".
     output_base.mkdir(parents=True, exist_ok=True)
 
+    console = Console(quiet=quiet)
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
     # when encrypting we don't want persistent plaintext files left behind,
@@ -343,76 +376,98 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
     if download_attachments:
         attachments_dir.mkdir(parents=True, exist_ok=True)
 
-    for v in vaults:
-        vault_id = v.get("id")
-        if not vault_id:
-            print(f"  warning: skipping vault with missing id: {v}")
-            continue
-        vault_name = v.get("name") or vault_id
-        if not quiet:
-            print(f"Exporting vault: {vault_name} ({vault_id})")
+    # --- progress-tracked vault/item export ---
+    total_items = 0
+    total_attachments = 0
+    warnings: list[str] = []
 
-        items_summary = exporter.list_items(vault_id)
-        items_full = []
-        for s in items_summary:
-            item_id = s.get("id")
-            if not item_id:
-                print(f"    warning: skipping item with missing id: {s}")
+    progress = _make_progress(quiet)
+    with progress:
+        vault_task = progress.add_task("Vaults", total=len(vaults))
+
+        for v in vaults:
+            vault_id = v.get("id")
+            if not vault_id:
+                warnings.append(f"skipping vault with missing id: {v}")
+                progress.advance(vault_task)
                 continue
-            try:
-                item = exporter.get_item(item_id)
-            except Exception as e:
-                print(f"  warning: failed to fetch item {item_id}: {e}")
-                continue
-            # download attachments if present
-            files_meta = item.get("files") or item.get("documents") or []
-            for fmeta in files_meta:
-                fid = fmeta.get("id") or fmeta.get("file_id")
-                name = fmeta.get("name") or fmeta.get("filename")
-                if fid and name and download_attachments:
-                    if encrypt == "none":
-                        dest = attachments_dir / f"{fid}-{name}"
-                        try:
-                            exporter.download_document(fid, dest)
-                        except Exception as e:
-                            print(
-                                f"    warning: could not download attachment {name}: {e}")
+            vault_name = v.get("name") or vault_id
+            progress.update(vault_task, description=f"Vault: [cyan]{vault_name}[/cyan]")
+
+            items_summary = exporter.list_items(vault_id)
+            item_task = progress.add_task(
+                f"  {vault_name}", total=len(items_summary),
+            )
+            items_full = []
+            for s in items_summary:
+                item_id = s.get("id")
+                if not item_id:
+                    warnings.append(f"skipping item with missing id in {vault_name}: {s}")
+                    progress.advance(item_task)
+                    continue
+                try:
+                    item = exporter.get_item(item_id)
+                except Exception as e:
+                    warnings.append(f"failed to fetch item {item_id}: {e}")
+                    progress.advance(item_task)
+                    continue
+                # download attachments if present
+                files_meta = item.get("files") or item.get("documents") or []
+                for fmeta in files_meta:
+                    fid = fmeta.get("id") or fmeta.get("file_id")
+                    name = fmeta.get("name") or fmeta.get("filename")
+                    if fid and name and download_attachments:
+                        if encrypt == "none":
+                            dest = attachments_dir / f"{fid}-{name}"
+                            try:
+                                exporter.download_document(fid, dest)
+                            except Exception as e:
+                                warnings.append(f"could not download attachment {name}: {e}")
+                            else:
+                                manifest["files"].append(
+                                    {"path": str(dest.relative_to(outdir)), "sha256": sha256_file(dest)})
+                                total_attachments += 1
                         else:
-                            manifest["files"].append(
-                                {"path": str(dest.relative_to(outdir)), "sha256": sha256_file(dest)})
-                    else:
-                        # fetch bytes directly and keep in memory
-                        try:
-                            data = exporter.download_document_bytes(fid)
-                        except Exception as e:
-                            print(
-                                f"    warning: could not download attachment {name}: {e}")
-                            continue
-                        sha = hashlib.sha256(data).hexdigest()
-                        relpath = f"attachments/{fid}-{name}"
-                        manifest["files"].append({"path": relpath, "sha256": sha})
-                        memory_files.append((relpath, data))
-            items_full.append(item)
+                            # fetch bytes directly and keep in memory
+                            try:
+                                data = exporter.download_document_bytes(fid)
+                            except Exception as e:
+                                warnings.append(f"could not download attachment {name}: {e}")
+                                continue
+                            sha = hashlib.sha256(data).hexdigest()
+                            relpath = f"attachments/{fid}-{name}"
+                            manifest["files"].append({"path": relpath, "sha256": sha})
+                            memory_files.append((relpath, data))
+                            total_attachments += 1
+                items_full.append(item)
+                total_items += 1
+                progress.advance(item_task)
 
-        # always serialise vault JSON into memory; never write it to disk
-        vault_data = json.dumps(items_full, indent=2, ensure_ascii=False).encode("utf-8")
-        vault_sha = hashlib.sha256(vault_data).hexdigest()
-        memory_files.append((f"vault-{vault_id}.json", vault_data))
-        manifest["vaults"].append({
-            "id": vault_id,
-            "name": vault_name,
-            "items": len(items_full),
-            "file": f"vault-{vault_id}.json",
-            "sha256": vault_sha,
-        })
+            # always serialise vault JSON into memory; never write it to disk
+            vault_data = json.dumps(items_full, indent=2, ensure_ascii=False).encode("utf-8")
+            vault_sha = hashlib.sha256(vault_data).hexdigest()
+            memory_files.append((f"vault-{vault_id}.json", vault_data))
+            manifest["vaults"].append({
+                "id": vault_id,
+                "name": vault_name,
+                "items": len(items_full),
+                "file": f"vault-{vault_id}.json",
+                "sha256": vault_sha,
+            })
 
-        if "md" in formats:
-            md_name = f"vault-{vault_id}.md"
-            md_text = vault_to_md(vault_name, items_full)
-            md_bytes = md_text.encode("utf-8")
-            sha = hashlib.sha256(md_bytes).hexdigest()
-            manifest["files"].append({"path": md_name, "sha256": sha})
-            memory_files.append((md_name, md_bytes))
+            if "md" in formats:
+                md_name = f"vault-{vault_id}.md"
+                md_text = vault_to_md(vault_name, items_full)
+                md_bytes = md_text.encode("utf-8")
+                sha = hashlib.sha256(md_bytes).hexdigest()
+                manifest["files"].append({"path": md_name, "sha256": sha})
+                memory_files.append((md_name, md_bytes))
+
+            progress.advance(vault_task)
+
+    # print any warnings that were collected during export
+    for w in warnings:
+        console.print(f"  [yellow]warning:[/yellow] {w}")
 
     # write manifest
     manifest_path = outdir / "manifest.json"
@@ -434,8 +489,7 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
                 ti.size = len(data)
                 tar.addfile(ti, io.BytesIO(data))
         archive_sha = sha256_file(archive_path)
-        if not quiet:
-            print(f"Created archive: {archive_path} (sha256={archive_sha})")
+        _print_summary(console, archive_path, archive_sha, encrypt, len(vaults), total_items, total_attachments)
         return archive_path
 
     # At this point we know encryption is requested.
@@ -484,7 +538,31 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
             shutil.rmtree(outdir)
         except Exception:
             pass
-    if not quiet:
-        print(f"Streamed archive -> {out_enc} (sha256={archive_sha})")
+    _print_summary(console, Path(out_enc), archive_sha, encrypt, len(vaults), total_items, total_attachments)
     return Path(out_enc)
+
+
+def _print_summary(
+    console: Console,
+    path: Path,
+    sha256: str,
+    encrypt: str,
+    vault_count: int,
+    item_count: int,
+    attachment_count: int,
+) -> None:
+    """Print a rich summary panel after backup completes."""
+    table = Table.grid(padding=(0, 2))
+    table.add_column(style="bold")
+    table.add_column()
+    table.add_row("Archive", str(path))
+    table.add_row("SHA-256", sha256)
+    if encrypt != "none":
+        table.add_row("Encryption", encrypt)
+    table.add_row("Vaults", str(vault_count))
+    table.add_row("Items", str(item_count))
+    if attachment_count:
+        table.add_row("Attachments", str(attachment_count))
+    console.print()
+    console.print(Panel(table, title="[bold green]Backup complete[/bold green]", border_style="green"))
 

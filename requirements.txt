@@ -1,1 +1,2 @@
 pytest
+rich>=13.0

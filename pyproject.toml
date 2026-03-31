@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "eric" }]
+dependencies = ["rich>=13.0"]
 
 [project.scripts]
 "1p-exporter" = "onep_exporter.__main__:main"
