@@ -148,13 +148,22 @@ You can still run the package without direnv using `PYTHONPATH=src .venv/bin/pyt
 
 ### MacOS
 
-- Ensure `op` is installed
+- Ensure `op` and `age` are installed
   - `brew install 1password-cli`
-- [Setup](https://developer.1password.com/docs/cli/app-integration/#set-up-the-app-integration) the `op` to `1Password` integration
+  - `brew install age`
 - Run `op account add`: should report 1Password CLI is connected with the 1Password app.
 - Run `op signin`: should be prompted to authorise 1Password access.
+  - **macOS "access data from other apps" prompt:**
+    The `op` CLI communicates with the 1Password desktop app through its group
+    container.  On macOS Sequoia (15+) this triggers an "App Data" permission
+    prompt: *"iTerm.app would like to access data from other apps."*
+
+    - Click **Allow** — the decision should be remembered.  If macOS keeps
+      prompting on every `op` call restart iTerm/Terminal.
+- [Setup](https://developer.1password.com/docs/cli/app-integration/#set-up-the-app-integration) the `op` to `1Password` integration
 - `python -m onep_exporter doctor`
-  - Need `age` and `op` installed. It's OK if the `config` is missing at this point.
+  - Need `age` and `op` installed.
+  - It's OK if the `config` is missing at this point.
 - `python -m onep_exporter init`
   - Accept all defaults
   - `doctor` run at the end should be all green
