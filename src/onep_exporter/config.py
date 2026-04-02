@@ -155,7 +155,7 @@ def configure_interactive() -> dict:
 
     output = prompt(
         "Default backup directory",
-        cfg.get("output_base", str(Path.home() / "1p-backups")),
+        cfg.get("backup_directory", cfg.get("output_base", str(Path.home() / "1p-backups"))),
     )
     formats = prompt(
         "Default formats (comma-separated)",
@@ -361,7 +361,7 @@ def configure_interactive() -> dict:
 
     # assemble global config
     new_cfg = {
-        "output_base": output,
+        "backup_directory": output,
         "formats": [f.strip() for f in formats.split(",") if f.strip()],
         "encrypt": encrypt,
         "download_attachments": download_attachments.lower().startswith("y"),

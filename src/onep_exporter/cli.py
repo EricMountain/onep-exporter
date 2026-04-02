@@ -7,6 +7,7 @@ from .doctor import doctor
 from .exporter import run_backup, OpExporter
 from .keychain import sync_keychain
 from .query import query_list_titles, query_get_item
+from .tui import run_tui
 from .utils import verify_manifest, item_field_value
 from .templates import item_to_md
 
@@ -120,6 +121,13 @@ def build_parser() -> argparse.ArgumentParser:
     qg.add_argument("--age-passphrase", dest="age_passphrase",
                     help="passphrase to use when decrypting age archives; sets BACKUP_PASSPHRASE environment variable")
 
+    # 'browse' command — interactive TUI
+    br = sub.add_parser("browse", help="Interactive TUI to search and view exported items")
+    br.add_argument("--dir", "-d", default=None,
+                    help="path to backup directory or archive (default: latest under backups/)")
+    br.add_argument("--backup-base", default="backups",
+                    help="base directory containing backup archives (default: backups/)")
+
     return p
 
 
@@ -151,7 +159,7 @@ def main(argv=None):
                 v = cfg_val if cfg_val is not None else default
             return transform(v) if transform else v
 
-        output_base = _opt("output", cfg.get("output_base"), "backups")
+        output_base = _opt("output", cfg.get("backup_directory") or cfg.get("output_base"), "backups")
         formats = _opt("formats", cfg.get("formats"), ["json", "md"],
                         lambda v: v.split(",") if isinstance(v, str) else v)
         encrypt = _opt("encrypt", cfg.get("encrypt"), "none")
@@ -252,7 +260,17 @@ def main(argv=None):
                 print(item_to_md(item))
             sys.exit(0)
         else:
-            q.print_help()
+            parser.print_help()
             sys.exit(2)
+    elif args.cmd == "browse":
+        cfg = load_config()
+        backup_base = args.backup_base if args.backup_base != "backups" else (
+            cfg.get("backup_directory") or cfg.get("output_base") or "backups"
+        )
+        try:
+            run_tui(path=args.dir, backup_base=backup_base)
+        except FileNotFoundError as e:
+            print(f"error: {e}")
+            sys.exit(1)
     else:
         parser.print_help()

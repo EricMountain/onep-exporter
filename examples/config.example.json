@@ -1,5 +1,5 @@
 {
-    "output_base": "/home/<your-username>/onep-backups",
+    "backup_directory": "/home/<your-username>/onep-backups",
     "formats": [
         "json",
         "md"
