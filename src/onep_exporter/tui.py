@@ -12,7 +12,22 @@ from textual.widgets import Footer, Header, Input, ListItem, ListView, Static
 
 from .config import load_config, save_config
 from .query import _iter_exported_items
-from .templates import item_to_md
+from .templates import _totp_now
+
+_SENSITIVE_TYPES = frozenset({"CONCEALED", "PASSWORD", "OTP", "TOTP"})
+_SENSITIVE_LABELS = frozenset({
+    "password", "passphrase", "secret", "token", "api key", "private key",
+    "access token", "secret key", "pin", "credential",
+})
+
+
+def _field_is_sensitive(field: dict) -> bool:
+    """Return True if *field* should be treated as a sensitive/secret value."""
+    ftype = (field.get("type") or "").upper()
+    if ftype in _SENSITIVE_TYPES:
+        return True
+    label = (field.get("name") or field.get("label") or "").lower()
+    return any(s in label for s in _SENSITIVE_LABELS)
 
 
 def _find_latest_archive(base: Union[str, Path]) -> Path:
@@ -61,8 +76,96 @@ class ItemList(ListView):
     """Scrollable, filterable list of 1Password items."""
 
 
-class ItemDetail(Static):
-    """Panel that renders a single item in markdown-ish format."""
+class SecretLabel(Static):
+    """Shows ••••••••; reveals on hover, copies to clipboard on click."""
+
+    DEFAULT_CSS = """
+    SecretLabel {
+        color: $text-muted;
+    }
+    SecretLabel:hover {
+        background: $boost;
+        color: $success;
+    }
+    """
+
+    def __init__(self, field_name: str, secret: str) -> None:
+        self._field_name = field_name
+        self._secret = secret
+        super().__init__(f"- {field_name}: \u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", markup=False)
+
+    def on_enter(self) -> None:
+        self.update(f"- {self._field_name}: {self._secret}")
+
+    def on_leave(self) -> None:
+        self.update(f"- {self._field_name}: \u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022")
+
+    def on_click(self) -> None:
+        self.app.copy_to_clipboard(self._secret)
+        self.app.notify(f'Copied "{self._field_name}" to clipboard', timeout=2)
+
+
+class ItemDetail(Vertical):
+    """Panel that renders a single item with interactive fields."""
+
+    async def set_content(self, *widgets: Static) -> None:
+        await self.query("*").remove()
+        if widgets:
+            await self.mount(*widgets)
+
+
+def _build_item_widgets(item: dict) -> List:
+    """Build a list of Static / SecretLabel widgets that render *item*."""
+    widgets: List = []
+    pending: List[str] = []
+
+    def flush() -> None:
+        if pending:
+            widgets.append(Static("\n".join(pending), markup=False))
+            pending.clear()
+
+    title = item.get("title") or item.get("name") or "(no title)"
+    pending.append(f"# {title}")
+    pending.append("")
+
+    if category := item.get("category"):
+        pending.append(f"Category: {category}")
+    if tags := item.get("tags"):
+        pending.append(f"Tags: {', '.join(tags)}")
+
+    for url in item.get("urls", []):
+        href = url.get("href") or url.get("url") or ""
+        label = url.get("label", "")
+        if href:
+            pending.append(f"- {(label + ' ' + href).strip()}")
+
+    pending.append("")
+
+    for f in item.get("fields", []):
+        name = f.get("name") or f.get("label") or "field"
+        value = f.get("value")
+        if not value:
+            continue
+        ftype = (f.get("type") or "").upper()
+        if ftype in ("OTP", "TOTP"):
+            flush()
+            code = _totp_now(value)
+            if code:
+                widgets.append(SecretLabel(f"{name} (TOTP)", code))
+            else:
+                pending.append(f"- {name}: (TOTP \u2014 unable to generate code)")
+        elif _field_is_sensitive(f):
+            flush()
+            widgets.append(SecretLabel(name, value))
+        else:
+            pending.append(f"- {name}: {value}")
+
+    if note := item.get("notesPlain"):
+        pending.append("---")
+        pending.append(note)
+
+    flush()
+    return widgets
 
 
 class BrowseApp(App):
@@ -97,6 +200,7 @@ class BrowseApp(App):
     }
     #detail {
         width: 100%;
+        height: auto;
     }
     ListItem {
         padding: 0 1;
@@ -125,7 +229,7 @@ class BrowseApp(App):
         with Horizontal(id="main"):
             yield ItemList(id="item-list")
             with Vertical(id="detail-scroll"):
-                yield ItemDetail(id="detail", markup=False)
+                yield ItemDetail(id="detail")
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -134,7 +238,7 @@ class BrowseApp(App):
             self.theme = saved_theme
         self._all_items = _load_items(self._archive_path)
         self._all_items.sort(key=lambda i: (i.get("title") or "").lower())
-        self._show_archive_stats()
+        await self._show_archive_stats()
         await self._apply_filter()
         self._update_status()
         self.query_one("#search", Input).focus()
@@ -171,24 +275,25 @@ class BrowseApp(App):
             await lv.extend(new_items)
         self._update_status()
         if not self._filtered_items:
-            self._show_archive_stats()
+            await self._show_archive_stats()
 
     # --- item detail ---------------------------------------------------------
 
     @on(ListView.Highlighted, "#item-list")
-    def _on_item_highlighted(self, event: ListView.Highlighted) -> None:
+    async def _on_item_highlighted(self, event: ListView.Highlighted) -> None:
         if event.item is not None:
             idx = event.list_view.index
             if idx is not None:
-                self._show_item(idx)
+                await self._show_item(idx)
 
-    def _show_item(self, index: int) -> None:
+    async def _show_item(self, index: int) -> None:
         if 0 <= index < len(self._filtered_items):
             item = self._filtered_items[index]
-            rendered = item_to_md(item)
-            self.query_one("#detail", ItemDetail).update(rendered)
+            await self.query_one("#detail", ItemDetail).set_content(
+                *_build_item_widgets(item)
+            )
 
-    def _show_archive_stats(self) -> None:
+    async def _show_archive_stats(self) -> None:
         """Display archive summary in the detail pane."""
         total = len(self._all_items)
         categories: dict = {}
@@ -214,7 +319,9 @@ class BrowseApp(App):
                 lines.append(f"- {cat}: {count}")
         if total == 0:
             lines += ["", "⚠ No items found — check the archive path."]
-        self.query_one("#detail", ItemDetail).update("\n".join(lines))
+        await self.query_one("#detail", ItemDetail).set_content(
+            Static("\n".join(lines), markup=False)
+        )
         self._update_status()
 
     # --- status bar ----------------------------------------------------------
