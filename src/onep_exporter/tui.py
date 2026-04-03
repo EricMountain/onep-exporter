@@ -71,8 +71,11 @@ class BrowseApp(App):
 
     CSS = """
     #search {
-        dock: top;
-        margin: 0 1;
+        margin: 0;
+        border: solid $accent;
+    }
+    #search:focus {
+        border: solid $accent-lighten-2;
     }
     #main {
         height: 1fr;
@@ -83,6 +86,9 @@ class BrowseApp(App):
         max-width: 50;
         border-right: solid $accent;
     }
+    #item-list:focus {
+        border-right: solid $accent-lighten-2;
+    }
     #detail-scroll {
         width: 3fr;
         overflow-y: auto;
@@ -90,13 +96,6 @@ class BrowseApp(App):
     }
     #detail {
         width: 100%;
-    }
-    #status-bar {
-        dock: bottom;
-        height: 1;
-        background: $surface;
-        color: $text-muted;
-        padding: 0 1;
     }
     ListItem {
         padding: 0 1;
@@ -126,7 +125,6 @@ class BrowseApp(App):
             yield ItemList(id="item-list")
             with Vertical(id="detail-scroll"):
                 yield ItemDetail(id="detail", markup=False)
-        yield Static(id="status-bar")
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -134,6 +132,7 @@ class BrowseApp(App):
         self._all_items.sort(key=lambda i: (i.get("title") or "").lower())
         self._show_archive_stats()
         await self._apply_filter()
+        self._update_status()
         self.query_one("#search", Input).focus()
 
     # --- search filtering ---------------------------------------------------
@@ -212,6 +211,7 @@ class BrowseApp(App):
         if total == 0:
             lines += ["", "⚠ No items found — check the archive path."]
         self.query_one("#detail", ItemDetail).update("\n".join(lines))
+        self._update_status()
 
     # --- status bar ----------------------------------------------------------
 
@@ -219,9 +219,7 @@ class BrowseApp(App):
         total = len(self._all_items)
         shown = len(self._filtered_items)
         archive_name = self._archive_path.name
-        self.query_one("#status-bar", Static).update(
-            f" {archive_name}  ·  {shown}/{total} items"
-        )
+        self.sub_title = f"{archive_name}  ·  {shown}/{total} items"
 
     # --- key bindings --------------------------------------------------------
 
