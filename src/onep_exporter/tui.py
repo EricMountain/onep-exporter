@@ -68,7 +68,7 @@ class ItemDetail(Static):
 class BrowseApp(App):
     """TUI for searching and viewing exported 1Password items."""
 
-    TITLE = "1p-exporter · browse"
+    TITLE = "1p-exporter · Browse Archive"
 
     CSS = """
     #search {
