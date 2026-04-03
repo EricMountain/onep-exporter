@@ -1,9 +1,117 @@
 """macOS keychain and cross-platform keyring helpers for 1p-exporter."""
 
 import sys
-from typing import Optional
+from typing import List, Optional
 
 from .utils import run_cmd
+
+
+def _macos_find_password(service: str, username: str) -> Optional[str]:
+    """Read a generic-password item using macOS ``security`` CLI."""
+    rc, out, _ = run_cmd(
+        [
+            "security",
+            "find-generic-password",
+            "-s",
+            service,
+            "-a",
+            username,
+            "-w",
+        ],
+        check=False,
+    )
+    if rc != 0:
+        return None
+    return out.strip() or None
+
+
+def _exporter_keychain_targets(
+    cfg: Optional[dict] = None,
+    *,
+    service: Optional[str] = None,
+    accounts: Optional[List[str]] = None,
+) -> List[tuple[str, str]]:
+    """Return candidate (service, account) tuples used by 1p-exporter."""
+    cfg = cfg or {}
+    age_cfg = cfg.get("age", {})
+
+    services = []
+    if service:
+        services.append(service)
+    else:
+        configured = age_cfg.get("keychain_service")
+        if configured:
+            services.append(configured)
+        services.append("1p-exporter")
+
+    account_values = []
+    if accounts:
+        account_values.extend(accounts)
+    else:
+        configured_user = age_cfg.get("keychain_username")
+        if configured_user:
+            account_values.append(configured_user)
+        account_values.extend(["backup", "age_private_key"])
+
+    pairs = {(svc, acct) for svc in services for acct in account_values if svc and acct}
+    return sorted(pairs)
+
+
+def list_exporter_keychain_entries(
+    cfg: Optional[dict] = None,
+    *,
+    service: Optional[str] = None,
+    accounts: Optional[List[str]] = None,
+) -> List[dict]:
+    """List existing keychain entries that 1p-exporter may use."""
+    if sys.platform != "darwin":
+        raise RuntimeError("keychain entry listing is supported on macOS only")
+
+    entries: List[dict] = []
+    for svc, acct in _exporter_keychain_targets(
+        cfg, service=service, accounts=accounts
+    ):
+        secret = _macos_find_password(svc, acct)
+        if secret is None:
+            continue
+        entries.append(
+            {
+                "service": svc,
+                "account": acct,
+                "secret_length": len(secret),
+            }
+        )
+    return entries
+
+
+def tighten_keychain_entry_access(service: str, username: str) -> bool:
+    """Re-save an item with tighter ACL (no default trusted app).
+
+    Uses ``-T ""`` so the creating app is not implicitly trusted.
+    """
+    if sys.platform != "darwin":
+        raise RuntimeError("keychain access tightening is supported on macOS only")
+
+    secret = _macos_find_password(service, username)
+    if secret is None:
+        return False
+
+    run_cmd(
+        [
+            "security",
+            "add-generic-password",
+            "-s",
+            service,
+            "-a",
+            username,
+            "-w",
+            secret,
+            "-U",
+            "-T",
+            "",
+        ]
+    )
+    return True
 
 
 def get_passphrase_from_keychain(

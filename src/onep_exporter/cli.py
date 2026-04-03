@@ -5,7 +5,11 @@ import os
 from .config import load_config, configure_interactive, init_setup
 from .doctor import doctor
 from .exporter import run_backup, OpExporter
-from .keychain import sync_keychain
+from .keychain import (
+    sync_keychain,
+    list_exporter_keychain_entries,
+    tighten_keychain_entry_access,
+)
 from .query import query_list_titles, query_get_item
 from .tui import run_tui
 from .utils import verify_manifest, item_field_value
@@ -92,6 +96,48 @@ def build_parser() -> argparse.ArgumentParser:
     sk = sub.add_parser(
         "sync-keychain",
         help="Pull age credentials from 1Password into macOS keychain for offline decryption")
+
+    kc = sub.add_parser(
+        "keychain",
+        help="List and tighten macOS keychain entries used by 1p-exporter",
+    )
+    kcsub = kc.add_subparsers(dest="keychain_cmd")
+
+    kcl = kcsub.add_parser("list", help="List existing exporter keychain entries")
+    kcl.add_argument(
+        "--service",
+        default=None,
+        help="keychain service name (default: configured service and 1p-exporter)",
+    )
+    kcl.add_argument(
+        "--account",
+        action="append",
+        dest="accounts",
+        default=None,
+        help="account to include (can be repeated; default: exporter-related accounts)",
+    )
+
+    kct = kcsub.add_parser(
+        "tighten",
+        help="Re-save exporter keychain entries with tighter ACL (remove default trusted app)",
+    )
+    kct.add_argument(
+        "--service",
+        default=None,
+        help="keychain service name (default: configured service and 1p-exporter)",
+    )
+    kct.add_argument(
+        "--account",
+        action="append",
+        dest="accounts",
+        default=None,
+        help="account to tighten (can be repeated; default: exporter-related accounts)",
+    )
+    kct.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="show entries that would be tightened without changing them",
+    )
 
     # 'query' command for post-processing exported data
     q = sub.add_parser("query", help="Query exported backup data")
@@ -225,6 +271,68 @@ def main(argv=None):
     elif args.cmd == "sync-keychain":
         ok = sync_keychain()
         sys.exit(0 if ok else 1)
+    elif args.cmd == "keychain":
+        if sys.platform != "darwin":
+            print("error: keychain helpers are only supported on macOS")
+            sys.exit(2)
+
+        cfg = load_config()
+
+        if args.keychain_cmd == "list":
+            entries = list_exporter_keychain_entries(
+                cfg,
+                service=args.service,
+                accounts=args.accounts,
+            )
+            if not entries:
+                print("No exporter keychain entries found.")
+                sys.exit(1)
+            for ent in entries:
+                print(
+                    f"service={ent['service']} account={ent['account']} "
+                    f"secret_length={ent['secret_length']}"
+                )
+            sys.exit(0)
+
+        elif args.keychain_cmd == "tighten":
+            entries = list_exporter_keychain_entries(
+                cfg,
+                service=args.service,
+                accounts=args.accounts,
+            )
+            if not entries:
+                print("No exporter keychain entries found to tighten.")
+                sys.exit(1)
+
+            if args.dry_run:
+                for ent in entries:
+                    print(
+                        f"would tighten: service={ent['service']} "
+                        f"account={ent['account']}"
+                    )
+                sys.exit(0)
+
+            failures = 0
+            for ent in entries:
+                ok = tighten_keychain_entry_access(
+                    ent["service"], ent["account"]
+                )
+                if ok:
+                    print(
+                        f"tightened: service={ent['service']} "
+                        f"account={ent['account']}"
+                    )
+                else:
+                    failures += 1
+                    print(
+                        f"not found: service={ent['service']} "
+                        f"account={ent['account']}"
+                    )
+            sys.exit(0 if failures == 0 else 1)
+
+        else:
+            parser.print_help()
+            sys.exit(2)
     elif args.cmd == "query":
         if args.query_cmd == "list":
             _setup_query_env(args)
