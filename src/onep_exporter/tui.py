@@ -10,6 +10,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, ListItem, ListView, Static
 
+from .config import load_config, save_config
 from .query import _iter_exported_items
 from .templates import item_to_md
 
@@ -128,6 +129,9 @@ class BrowseApp(App):
         yield Footer()
 
     async def on_mount(self) -> None:
+        cfg = load_config()
+        if saved_theme := cfg.get("tui_theme"):
+            self.theme = saved_theme
         self._all_items = _load_items(self._archive_path)
         self._all_items.sort(key=lambda i: (i.get("title") or "").lower())
         self._show_archive_stats()
@@ -220,6 +224,13 @@ class BrowseApp(App):
         shown = len(self._filtered_items)
         archive_name = self._archive_path.name
         self.sub_title = f"{archive_name}  ·  {shown}/{total} items"
+
+    # --- theme persistence --------------------------------------------------
+
+    def watch_theme(self, theme: str) -> None:
+        cfg = load_config()
+        cfg["tui_theme"] = theme
+        save_config(cfg)
 
     # --- key bindings --------------------------------------------------------
 
