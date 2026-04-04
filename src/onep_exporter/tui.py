@@ -391,10 +391,6 @@ class BrowseApp(App):
         width: 1fr;
         min-width: 30;
         max-width: 50;
-        border-right: solid $accent;
-    }
-    #item-list:focus {
-        border-right: solid $accent-lighten-2;
     }
     #detail-scroll {
         width: 3fr;
