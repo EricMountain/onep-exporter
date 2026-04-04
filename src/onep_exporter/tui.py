@@ -198,6 +198,7 @@ class BrowseApp(App):
 
     TITLE = "1p-exporter · Browse Archive"
 
+    # ListItem:even has a perf impact. Might remove this if it's too bad.
     CSS = """
     #search {
         margin: 0;
@@ -229,6 +230,15 @@ class BrowseApp(App):
     }
     ListItem {
         padding: 0 1;
+    }
+    ListItem:even {
+        background: $boost;
+    }
+    #item-list > ListItem:even.-highlight {
+        background: $block-cursor-blurred-background;
+    }
+    #item-list:focus > ListItem:even.-highlight {
+        background: $block-cursor-background;
     }
     ListItem > .item-title {
         width: 100%;
