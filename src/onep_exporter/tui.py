@@ -170,17 +170,29 @@ class SecretLabel(Static):
 
 
 class TotpLabel(Static):
-    """Shows a live TOTP code with countdown timer; reveals on hover, copies on click."""
+    """Shows a live TOTP code with segmented progress bar and traffic-light colour."""
 
+    # Three CSS classes drive the traffic-light colour.  Hover only adds a
+    # background boost so the time-based colour remains visible when revealed.
     DEFAULT_CSS = """
     TotpLabel {
         color: $text-muted;
     }
-    TotpLabel:hover {
-        background: $boost;
+    TotpLabel.totp-fresh {
         color: $success;
     }
+    TotpLabel.totp-warning {
+        color: $warning;
+    }
+    TotpLabel.totp-urgent {
+        color: $error;
+    }
+    TotpLabel:hover {
+        background: $boost;
+    }
     """
+
+    _BAR_WIDTH = 8  # number of block segments
 
     def __init__(self, field_name: str, otpauth: str, period: int = 30) -> None:
         self._field_name = field_name
@@ -195,19 +207,40 @@ class TotpLabel(Static):
     def _current_code(self) -> str:
         return _totp_now(self._otpauth) or "------"
 
+    def _bar(self, secs: int) -> str:
+        filled = max(0, min(self._BAR_WIDTH, round(secs / self._period * self._BAR_WIDTH)))
+        return "\u2588" * filled + "\u2591" * (self._BAR_WIDTH - filled)
+
+    def _color_class(self, secs: int) -> str:
+        ratio = secs / self._period
+        if ratio > 2 / 3:
+            return "totp-fresh"
+        if ratio > 1 / 3:
+            return "totp-warning"
+        return "totp-urgent"
+
     def _masked(self) -> str:
-        return f"- {self._field_name}: \u2022\u2022\u2022\u2022\u2022\u2022 [{self._seconds_remaining()}s]"
+        secs = self._seconds_remaining()
+        return f"- {self._field_name}: \u2022\u2022\u2022\u2022\u2022\u2022  {self._bar(secs)} {secs:2}s"
 
     def _revealed_text(self) -> str:
-        return f"- {self._field_name}: {self._current_code()} [{self._seconds_remaining()}s]"
+        secs = self._seconds_remaining()
+        return f"- {self._field_name}: {self._current_code()}  {self._bar(secs)} {secs:2}s"
+
+    def _update_color(self) -> None:
+        secs = self._seconds_remaining()
+        self.remove_class("totp-fresh", "totp-warning", "totp-urgent")
+        self.add_class(self._color_class(secs))
 
     def on_mount(self) -> None:
+        self._update_color()
         self._timer = self.set_interval(1, self._tick)
 
     def on_unmount(self) -> None:
         self._timer.stop()
 
     def _tick(self) -> None:
+        self._update_color()
         self.update(self._revealed_text() if self._revealed else self._masked())
 
     def on_enter(self) -> None:
