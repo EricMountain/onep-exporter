@@ -13,7 +13,8 @@ from textual.worker import Worker, WorkerState
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 
-from textual.widgets import Footer, Header, Input, ListItem, ListView, Static
+from textual.widgets import Footer, Header, Input, OptionList, Static
+from textual.strip import Strip
 from textual.timer import Timer
 from .config import load_config, save_config
 from .query import _iter_exported_items
@@ -136,8 +137,49 @@ class Spinner(Static):
             self._timer.stop()
 
 
-class ItemList(ListView):
+class ItemList(OptionList):
     """Scrollable, filterable list of 1Password items."""
+
+    def render_line(self, y: int) -> Strip:
+        line_number = self.scroll_offset.y + y
+        try:
+            option_index, line_offset = self._lines[line_number]
+            option = self.options[option_index]
+        except IndexError:
+            return Strip.blank(
+                self.scrollable_content_region.width,
+                self.get_visual_style("option-list--option").rich_style,
+            )
+
+        mouse_over = self._mouse_hovering_over == option_index
+        component_class = ""
+        if option.disabled:
+            component_class = "option-list--option-disabled"
+        elif self.highlighted == option_index:
+            component_class = "option-list--option-highlighted"
+        elif mouse_over:
+            component_class = "option-list--option-hover"
+
+        if component_class:
+            style = self.get_visual_style("option-list--option", component_class)
+        else:
+            style = self.get_visual_style("option-list--option")
+            # Apply even-row striping only for default (non-highlighted/hover) rows.
+            if option_index % 2 == 0:
+                from dataclasses import replace as _dc_replace
+                bg = style.background
+                stripe_bg = bg.lighten(0.05) if bg.brightness < 0.5 else bg.darken(0.05)
+                style = _dc_replace(style, background=stripe_bg)
+
+        strips = self._get_option_render(option, style)
+        try:
+            strip = strips[line_offset]
+        except IndexError:
+            return Strip.blank(
+                self.scrollable_content_region.width,
+                self.get_visual_style("option-list--option").rich_style,
+            )
+        return strip
 
 
 class SecretLabel(Static):
@@ -260,10 +302,10 @@ class TotpLabel(Static):
 class ItemDetail(Vertical):
     """Panel that renders a single item with interactive fields."""
 
-    async def set_content(self, *widgets: Static) -> None:
-        await self.query("*").remove()
+    def set_content(self, *widgets: Static) -> None:
+        self.query("*").remove()
         if widgets:
-            await self.mount(*widgets)
+            self.mount(*widgets)
 
 
 def _get_totp_period(value: str) -> int:
@@ -369,21 +411,6 @@ class BrowseApp(App):
         content-align: center middle;
         color: $accent;
     }
-    ListItem {
-        padding: 0 1;
-    }
-    ListItem:even {
-        background: $boost;
-    }
-    #item-list > ListItem:even.-highlight {
-        background: $block-cursor-blurred-background;
-    }
-    #item-list:focus > ListItem:even.-highlight {
-        background: $block-cursor-background;
-    }
-    ListItem > .item-title {
-        width: 100%;
-    }
     """
 
     BINDINGS = [
@@ -398,6 +425,8 @@ class BrowseApp(App):
         self._archive_path = archive_path
         self._all_items: List[dict] = []
         self._filtered_items: List[dict] = []
+        self._filter_seq: int = 0
+        self._rebuild_timer: Optional[Timer] = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -447,18 +476,32 @@ class BrowseApp(App):
             await spinner.remove()
             await main.mount(ItemList(id="item-list"))
             await main.mount(Vertical(ItemDetail(id="detail"), id="detail-scroll"))
-            await self._show_archive_stats()
-            await self._apply_filter()
+            self._show_archive_stats()
+            self._apply_filter()
+            self._rebuild_list()
             self._update_status()
             self.query_one("#search", Input).focus()
 
     # --- search filtering ---------------------------------------------------
 
     @on(Input.Changed, "#search")
-    async def _on_search_changed(self, event: Input.Changed) -> None:
-        await self._apply_filter(event.value)
+    def _on_search_changed(self, event: Input.Changed) -> None:
+        """Debounce: each keystroke resets a short timer.  When the timer
+        fires it reads the *current* Input.value and rebuilds the list
+        entirely synchronously — no ``await`` anywhere in the path."""
+        if self._rebuild_timer is not None:
+            self._rebuild_timer.stop()
+        self._rebuild_timer = self.set_timer(
+            0.15, self._do_search_rebuild
+        )
 
-    async def _apply_filter(self, search_text: str = "") -> None:
+    def _do_search_rebuild(self) -> None:
+        self._rebuild_timer = None
+        value = self.query_one("#search", Input).value
+        self._apply_filter(value)
+        self._rebuild_list()
+
+    def _apply_filter(self, search_text: str = "") -> None:
         text = search_text.strip().lower()
         if text:
             self._filtered_items = [
@@ -467,43 +510,35 @@ class BrowseApp(App):
             ]
         else:
             self._filtered_items = list(self._all_items)
-        await self._rebuild_list()
 
-    async def _rebuild_list(self) -> None:
+    def _rebuild_list(self) -> None:
+        self._filter_seq += 1
         lv = self.query_one("#item-list", ItemList)
-        await lv.clear()
-        new_items = []
+        options = []
         for item in self._filtered_items:
             title = item.get("title") or "(no title)"
             category = (item.get("category") or "").upper()
-            icon = _CATEGORY_ICONS.get(category, "\U0001f4e6")  # 📦 fallback
-            label = f"{icon} {title}"
-            new_items.append(
-                ListItem(Static(label, classes="item-title", markup=False))
-            )
-        if new_items:
-            await lv.extend(new_items)
+            icon = _CATEGORY_ICONS.get(category, "\U0001f4e6")  # \U0001f4e6 fallback
+            options.append(f"{icon} {title}")
+        lv.set_options(options)
         self._update_status()
         if not self._filtered_items:
-            await self._show_archive_stats()
+            self._show_archive_stats()
 
     # --- item detail ---------------------------------------------------------
 
-    @on(ListView.Highlighted, "#item-list")
-    async def _on_item_highlighted(self, event: ListView.Highlighted) -> None:
-        if event.item is not None:
-            idx = event.list_view.index
-            if idx is not None:
-                await self._show_item(idx)
+    @on(OptionList.OptionHighlighted, "#item-list")
+    def _on_item_highlighted(self, event: OptionList.OptionHighlighted) -> None:
+        idx = event.option_index
+        if 0 <= idx < len(self._filtered_items):
+            item = self._filtered_items[idx]
+            detail = self.query_one("#detail", ItemDetail)
+            detail.query("*").remove()
+            widgets = _build_item_widgets(item)
+            if widgets:
+                detail.mount(*widgets)
 
-    async def _show_item(self, index: int) -> None:
-        if 0 <= index < len(self._filtered_items):
-            item = self._filtered_items[index]
-            await self.query_one("#detail", ItemDetail).set_content(
-                *_build_item_widgets(item)
-            )
-
-    async def _show_archive_stats(self) -> None:
+    def _show_archive_stats(self) -> None:
         """Display archive summary in the detail pane."""
         total = len(self._all_items)
         categories: dict = {}
@@ -529,7 +564,7 @@ class BrowseApp(App):
                 lines.append(f"- {cat}: {count}")
         if total == 0:
             lines += ["", "⚠ No items found — check the archive path."]
-        await self.query_one("#detail", ItemDetail).set_content(
+        self.query_one("#detail", ItemDetail).set_content(
             Static("\n".join(lines), markup=False)
         )
         self._update_status()
