@@ -14,6 +14,31 @@ from .config import load_config, save_config
 from .query import _iter_exported_items
 from .templates import _totp_now
 
+_CATEGORY_ICONS: dict[str, str] = {
+    "LOGIN": "\U0001f511",           # 🔑
+    "SECURE_NOTE": "\U0001f4dd",     # 📝
+    "PASSWORD": "\U0001f510",        # 🔐
+    "CREDIT_CARD": "\U0001f4b3",     # 💳
+    "IDENTITY": "\U0001f464",        # 👤
+    "BANK_ACCOUNT": "\U0001f3e6",    # 🏦
+    "SOFTWARE_LICENSE": "\U0001f4bf", # 💿
+    "SERVER": "\U0001f5a5",          # 🖥
+    "EMAIL_ACCOUNT": "\u2709",       # ✉
+    "DOCUMENT": "\U0001f4c4",        # 📄
+    "DATABASE": "\U0001f5c4",        # 🗄
+    "MEDICAL_RECORD": "\U0001f3e5",  # 🏥
+    "PASSPORT": "\U0001f6c2",        # 🛂
+    "SSH_KEY": "\U0001f5dd",         # 🗝
+    "WIRELESS_ROUTER": "\U0001f4f6", # 📶
+    "API_CREDENTIAL": "\U0001f517",  # 🔗
+    "MEMBERSHIP": "\U0001f3ab",      # 🎫
+    "REWARD_PROGRAM": "\U0001f3c6",  # 🏆
+    "SOCIAL_SECURITY_NUMBER": "\U0001f4cb", # 📋
+    "DRIVER_LICENSE": "\U0001f697",  # 🚗
+    "OUTDOOR_LICENSE": "\U0001f3d5", # 🏕
+    "CRYPTO_WALLET": "\U0001fa99",   # 🪙
+}
+
 _SENSITIVE_TYPES = frozenset({"CONCEALED", "PASSWORD", "OTP", "TOTP"})
 _SENSITIVE_LABELS = frozenset({
     "password", "passphrase", "secret", "token", "api key", "private key",
@@ -266,8 +291,9 @@ class BrowseApp(App):
         new_items = []
         for item in self._filtered_items:
             title = item.get("title") or "(no title)"
-            category = item.get("category") or ""
-            label = f"{title}  [{category}]" if category else title
+            category = (item.get("category") or "").upper()
+            icon = _CATEGORY_ICONS.get(category, "\U0001f4e6")  # 📦 fallback
+            label = f"{icon} {title}"
             new_items.append(
                 ListItem(Static(label, classes="item-title", markup=False))
             )
