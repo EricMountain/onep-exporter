@@ -1,15 +1,18 @@
 """Interactive text UI for browsing exported 1Password backup data."""
 
 import re
+import sys
 from pathlib import Path
 from typing import List, Optional, Union
 
 from textual import on
 from textual.app import App, ComposeResult
+from textual.worker import Worker, WorkerState
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, Input, ListItem, ListView, Static
 
+from textual.widgets import Footer, Header, Input, ListItem, ListView, Static
+from textual.timer import Timer
 from .config import load_config, save_config
 from .query import _iter_exported_items
 from .templates import _totp_now
@@ -95,6 +98,40 @@ def _find_latest_archive(base: Union[str, Path]) -> Path:
 def _load_items(path: Path) -> List[dict]:
     """Load all items from the archive at *path* into memory."""
     return list(_iter_exported_items(path))
+
+
+class Spinner(Static):
+    """Simple bouncing-dot spinner using set_interval."""
+
+    _DOTS = 5
+    _LIT = "\u25cf"
+    _DIM = "\u25cb"
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(self._render_frame(0), **kwargs)
+        self._pos = 0
+        self._direction = 1
+        self._timer: Optional[Timer] = None
+
+    def _render_frame(self, pos: int) -> str:
+        return " ".join(
+            self._LIT if i == pos else self._DIM for i in range(self._DOTS)
+        )
+
+    def on_mount(self) -> None:
+        self._timer = self.set_interval(1 / 12, self._tick)
+
+    def _tick(self) -> None:
+        self.update(self._render_frame(self._pos))
+        self._pos += self._direction
+        if self._pos >= self._DOTS - 1:
+            self._direction = -1
+        elif self._pos <= 0:
+            self._direction = 1
+
+    def stop(self) -> None:
+        if self._timer is not None:
+            self._timer.stop()
 
 
 class ItemList(ListView):
@@ -228,6 +265,12 @@ class BrowseApp(App):
         width: 100%;
         height: auto;
     }
+    #spinner {
+        width: 100%;
+        height: 100%;
+        content-align: center middle;
+        color: $accent;
+    }
     ListItem {
         padding: 0 1;
     }
@@ -262,21 +305,54 @@ class BrowseApp(App):
         yield Header()
         yield Input(placeholder="Type to search items…", id="search")
         with Horizontal(id="main"):
-            yield ItemList(id="item-list")
-            with Vertical(id="detail-scroll"):
-                yield ItemDetail(id="detail")
+            yield Spinner(id="spinner")
         yield Footer()
 
     async def on_mount(self) -> None:
         cfg = load_config()
         if saved_theme := cfg.get("tui_theme"):
             self.theme = saved_theme
-        self._all_items = _load_items(self._archive_path)
-        self._all_items.sort(key=lambda i: (i.get("title") or "").lower())
-        await self._show_archive_stats()
-        await self._apply_filter()
-        self._update_status()
-        self.query_one("#search", Input).focus()
+        self.run_worker(self._do_load_subprocess, description="load_items")
+
+    async def _do_load_subprocess(self) -> List[dict]:
+        import asyncio
+        import json
+        archive_str = str(self._archive_path)
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-c",
+            "import json, sys; "
+            "from pathlib import Path; "
+            "from onep_exporter.query import _iter_exported_items; "
+            "items = list(_iter_exported_items(Path(sys.argv[1]))); "
+            "json.dump(items, sys.stdout)",
+            archive_str,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"load subprocess failed: {stderr.decode(errors='replace')}"
+            )
+        items: List[dict] = json.loads(stdout)
+        items.sort(key=lambda i: (i.get("title") or "").lower())
+        return items
+
+    async def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        if event.worker.description != "load_items":
+            return
+        if event.state == WorkerState.SUCCESS:
+            self._all_items = event.worker.result
+            spinner = self.query_one("#spinner", Spinner)
+            spinner.stop()
+            main = self.query_one("#main", Horizontal)
+            await spinner.remove()
+            await main.mount(ItemList(id="item-list"))
+            await main.mount(Vertical(ItemDetail(id="detail"), id="detail-scroll"))
+            await self._show_archive_stats()
+            await self._apply_filter()
+            self._update_status()
+            self.query_one("#search", Input).focus()
 
     # --- search filtering ---------------------------------------------------
 
