@@ -2,8 +2,10 @@
 
 import re
 import sys
+import time as _time
 from pathlib import Path
 from typing import List, Optional, Union
+from urllib.parse import parse_qs, urlparse
 
 from textual import on
 from textual.app import App, ComposeResult
@@ -167,6 +169,61 @@ class SecretLabel(Static):
         self.app.notify(f'Copied "{self._field_name}" to clipboard', timeout=2)
 
 
+class TotpLabel(Static):
+    """Shows a live TOTP code with countdown timer; reveals on hover, copies on click."""
+
+    DEFAULT_CSS = """
+    TotpLabel {
+        color: $text-muted;
+    }
+    TotpLabel:hover {
+        background: $boost;
+        color: $success;
+    }
+    """
+
+    def __init__(self, field_name: str, otpauth: str, period: int = 30) -> None:
+        self._field_name = field_name
+        self._otpauth = otpauth
+        self._period = period
+        self._revealed = False
+        super().__init__(self._masked(), markup=False)
+
+    def _seconds_remaining(self) -> int:
+        return self._period - int(_time.time()) % self._period
+
+    def _current_code(self) -> str:
+        return _totp_now(self._otpauth) or "------"
+
+    def _masked(self) -> str:
+        return f"- {self._field_name}: \u2022\u2022\u2022\u2022\u2022\u2022 [{self._seconds_remaining()}s]"
+
+    def _revealed_text(self) -> str:
+        return f"- {self._field_name}: {self._current_code()} [{self._seconds_remaining()}s]"
+
+    def on_mount(self) -> None:
+        self._timer = self.set_interval(1, self._tick)
+
+    def on_unmount(self) -> None:
+        self._timer.stop()
+
+    def _tick(self) -> None:
+        self.update(self._revealed_text() if self._revealed else self._masked())
+
+    def on_enter(self) -> None:
+        self._revealed = True
+        self.update(self._revealed_text())
+
+    def on_leave(self) -> None:
+        self._revealed = False
+        self.update(self._masked())
+
+    def on_click(self) -> None:
+        code = self._current_code()
+        self.app.copy_to_clipboard(code)
+        self.app.notify(f'Copied "{self._field_name}" to clipboard', timeout=2)
+
+
 class ItemDetail(Vertical):
     """Panel that renders a single item with interactive fields."""
 
@@ -176,8 +233,16 @@ class ItemDetail(Vertical):
             await self.mount(*widgets)
 
 
+def _get_totp_period(value: str) -> int:
+    """Return the TOTP period (in seconds) from an otpauth URI, defaulting to 30."""
+    if value.lower().startswith("otpauth://"):
+        qs = parse_qs(urlparse(value).query)
+        return int(qs.get("period", ["30"])[0])
+    return 30
+
+
 def _build_item_widgets(item: dict) -> List:
-    """Build a list of Static / SecretLabel widgets that render *item*."""
+    """Build a list of Static / SecretLabel / TotpLabel widgets that render *item*."""
     widgets: List = []
     pending: List[str] = []
 
@@ -211,9 +276,9 @@ def _build_item_widgets(item: dict) -> List:
         ftype = (f.get("type") or "").upper()
         if ftype in ("OTP", "TOTP"):
             flush()
-            code = _totp_now(value)
-            if code:
-                widgets.append(SecretLabel(f"{name} (TOTP)", code))
+            if _totp_now(value) is not None:
+                period = _get_totp_period(value)
+                widgets.append(TotpLabel(f"{name} (TOTP)", value, period))
             else:
                 pending.append(f"- {name}: (TOTP \u2014 unable to generate code)")
         elif _field_is_sensitive(f):
