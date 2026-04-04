@@ -14,6 +14,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 
 from textual.widgets import Footer, Header, Input, OptionList, Static
+from textual.strip import Strip
 from textual.timer import Timer
 from .config import load_config, save_config
 from .query import _iter_exported_items
@@ -137,7 +138,48 @@ class Spinner(Static):
 
 
 class ItemList(OptionList):
-    """Scrollable, filterable list of 1Password items."""""
+    """Scrollable, filterable list of 1Password items."""
+
+    def render_line(self, y: int) -> Strip:
+        line_number = self.scroll_offset.y + y
+        try:
+            option_index, line_offset = self._lines[line_number]
+            option = self.options[option_index]
+        except IndexError:
+            return Strip.blank(
+                self.scrollable_content_region.width,
+                self.get_visual_style("option-list--option").rich_style,
+            )
+
+        mouse_over = self._mouse_hovering_over == option_index
+        component_class = ""
+        if option.disabled:
+            component_class = "option-list--option-disabled"
+        elif self.highlighted == option_index:
+            component_class = "option-list--option-highlighted"
+        elif mouse_over:
+            component_class = "option-list--option-hover"
+
+        if component_class:
+            style = self.get_visual_style("option-list--option", component_class)
+        else:
+            style = self.get_visual_style("option-list--option")
+            # Apply even-row striping only for default (non-highlighted/hover) rows.
+            if option_index % 2 == 0:
+                from dataclasses import replace as _dc_replace
+                bg = style.background
+                stripe_bg = bg.lighten(0.05) if bg.brightness < 0.5 else bg.darken(0.05)
+                style = _dc_replace(style, background=stripe_bg)
+
+        strips = self._get_option_render(option, style)
+        try:
+            strip = strips[line_offset]
+        except IndexError:
+            return Strip.blank(
+                self.scrollable_content_region.width,
+                self.get_visual_style("option-list--option").rich_style,
+            )
+        return strip
 
 
 class SecretLabel(Static):
