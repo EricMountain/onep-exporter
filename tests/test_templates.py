@@ -42,6 +42,7 @@ def test_totp_now_otpauth_uri():
     result = _totp_now(uri)
     expected = _expected_totp(secret)
     assert result == expected
+    assert result is not None
     assert len(result) == 6
     assert result.isdigit()
 
@@ -57,6 +58,7 @@ def test_totp_now_8_digits():
     secret = "JBSWY3DPEHPK3PXP"
     uri = _make_otpauth(secret, digits=8)
     result = _totp_now(uri)
+    assert result is not None
     assert len(result) == 8
     assert result.isdigit()
 

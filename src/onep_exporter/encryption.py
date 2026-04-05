@@ -2,9 +2,12 @@
 
 import hashlib
 import re
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from .utils import run_cmd, ensure_tool
+
+if TYPE_CHECKING:
+    from .exporter import OpExporter
 
 
 class HashingWriter:
@@ -36,7 +39,7 @@ class HashingWriter:
 
 
 def resolve_age_config(
-    exporter: "OpExporter",  # noqa: F821
+    exporter: "OpExporter",
     *,
     age_pass_source: str,
     age_pass_item: Optional[str],
@@ -266,6 +269,7 @@ def resolve_decrypt_credentials(
         _log(
             f"  … trying 1Password item {item_ref!r} (field 'age_private_key')"
         )
+        exporter = None
         try:
             exporter = OpExporter()
             priv = exporter.get_item_field_value(
@@ -288,27 +292,28 @@ def resolve_decrypt_credentials(
                 f"'age_private_key': {exc}"
             )
         # try passphrase field
-        pass_field = age_cfg.get("pass_field", "passphrase")
-        _log(
-            f"  … trying 1Password item {item_ref!r} (field {pass_field!r})"
-        )
-        try:
-            passphrase = exporter.get_item_field_value(
-                item_ref, pass_field
+        if exporter:
+            pass_field = age_cfg.get("pass_field", "passphrase")
+            _log(
+                f"  … trying 1Password item {item_ref!r} (field {pass_field!r})"
             )
-            if passphrase:
-                _log(f"  ✓ 1Password passphrase found")
-                return (None, passphrase)
-            else:
+            try:
+                passphrase = exporter.get_item_field_value(
+                    item_ref, pass_field
+                )
+                if passphrase:
+                    _log(f"  ✓ 1Password passphrase found")
+                    return (None, passphrase)
+                else:
+                    _log(
+                        f"  ✗ 1Password item {item_ref!r} field "
+                        f"{pass_field!r}: empty/missing"
+                    )
+            except Exception as exc:
                 _log(
                     f"  ✗ 1Password item {item_ref!r} field "
-                    f"{pass_field!r}: empty/missing"
+                    f"{pass_field!r}: {exc}"
                 )
-        except Exception as exc:
-            _log(
-                f"  ✗ 1Password item {item_ref!r} field "
-                f"{pass_field!r}: {exc}"
-            )
     else:
         _log("  ✗ no 1Password item configured (age.pass_item not set)")
 
@@ -317,7 +322,7 @@ def resolve_decrypt_credentials(
 
 
 def sync_age_credentials_to_keychain(
-    exporter: "OpExporter",  # noqa: F821
+    exporter: "OpExporter",
     *,
     age_pass_item: Optional[str],
     age_pass_field: str = "passphrase",
@@ -377,7 +382,7 @@ def sync_age_credentials_to_keychain(
 
 
 def generate_age_keypair_and_store(
-    exporter: "OpExporter", item_id: str  # noqa: F821
+    exporter: "OpExporter", item_id: str
 ) -> Optional[str]:
     """Generate an age keypair, store private key in the given 1Password item.
 

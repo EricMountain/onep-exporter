@@ -168,8 +168,9 @@ class ItemList(OptionList):
             if option_index % 2 == 0:
                 from dataclasses import replace as _dc_replace
                 bg = style.background
-                stripe_bg = bg.lighten(0.05) if bg.brightness < 0.5 else bg.darken(0.05)
-                style = _dc_replace(style, background=stripe_bg)
+                if bg is not None:
+                    stripe_bg = bg.lighten(0.05) if bg.brightness < 0.5 else bg.darken(0.05)
+                    style = _dc_replace(style, background=stripe_bg)
 
         strips = self._get_option_render(option, style)
         try:
@@ -465,7 +466,9 @@ class BrowseApp(App):
         if event.worker.description != "load_items":
             return
         if event.state == WorkerState.SUCCESS:
-            self._all_items = event.worker.result
+            result = event.worker.result
+            if isinstance(result, list):
+                self._all_items = result
             spinner = self.query_one("#spinner", Spinner)
             spinner.stop()
             main = self.query_one("#main", Horizontal)

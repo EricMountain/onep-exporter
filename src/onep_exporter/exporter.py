@@ -520,14 +520,15 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
     # now stream the tarball through the encryptor subprocess
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     writer = HashingWriter(proc.stdin)
-    with tarfile.open(fileobj=writer, mode="w|gz") as tar:
+    with tarfile.open(fileobj=writer, mode="w|gz", format=tarfile.PAX_FORMAT) as tar:  # type: ignore[arg-type]
         tar.add(outdir, arcname=ts)
         for name, data in memory_files:
             ti = tarfile.TarInfo(name=f"{ts}/{name}")
             ti.size = len(data)
             tar.addfile(ti, io.BytesIO(data))
     writer.flush()
-    proc.stdin.close()
+    if proc.stdin:
+        proc.stdin.close()
     rc = proc.wait()
     if rc != 0:
         raise CommandError(cmd=cmd, rc=rc, stderr="encryption failed")
