@@ -2,7 +2,7 @@
 
 import hashlib
 import re
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Union
 
 from .utils import run_cmd, ensure_tool
 
@@ -170,7 +170,7 @@ def resolve_age_config(
 
 def resolve_decrypt_credentials(
     cfg: dict, *, verbose: bool = True
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[Optional[Union[str, tuple[str, str]]], Optional[str]]:
     """Resolve credentials for age decryption, preferring **local** stores.
 
     Returns ``(identity_or_none, passphrase_or_none)``.
