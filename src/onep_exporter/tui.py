@@ -416,11 +416,23 @@ def _md_to_rich(s: str) -> str:
     - Leading `# ` -> bold heading (white)
     - Leading `## ` -> bold heading (cyan)
     - Leading `### ` (and deeper) -> bold heading (blue)
+    - `[text](url)` -> clickable link (Rich `link` markup)
     - `**bold**` -> [bold]...[/bold]
     - `_italic_` -> [italic]...[/italic]
     - Inline code using backticks -> [bold]...[/bold]
     """
-    # Escape literal square brackets to avoid accidental Rich markup
+    # First, extract Markdown links and replace them with placeholders so
+    # we can safely escape literal '[' characters in the rest of the text.
+    links: List[tuple[str, str]] = []
+    def _link_sub(m: re.Match) -> str:
+        text = m.group(1)
+        url = m.group(2)
+        idx = len(links)
+        links.append((text, url))
+        return f"\x00LINK{idx}\x00"
+
+    s = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", _link_sub, s)
+    # Escape remaining literal square brackets to avoid accidental Rich markup
     s = s.replace("[", "\\[")
     # Headings — match all levels and colour by depth
     m = re.match(r"^(#{1,6}) (.*)", s)
@@ -439,6 +451,9 @@ def _md_to_rich(s: str) -> str:
     s = re.sub(r"(?<!\w)_(.+?)_(?!\w)", r"[italic]\1[/italic]", s)
     # Only treat `code` when markers are not inside a word
     s = re.sub(r"(?<!\w)`(.+?)`(?!\w)", r"[bold]\1[/bold]", s)
+    # Restore link placeholders with Rich `link=` markup
+    for idx, (text, url) in enumerate(links):
+        s = s.replace(f"\x00LINK{idx}\x00", f"[link={url}]{text}[/link]")
     return s
 
 
