@@ -12,6 +12,14 @@ def test_cli_exits_nonzero_on_op_item_failure(monkeypatch, tmp_path):
     monkeypatch.setattr(exporter_module.OpExporter, "list_vaults", lambda self: [{"id": "v1", "name": "Vault1"}])
     monkeypatch.setattr(exporter_module.OpExporter, "list_items", lambda self, vault_id: [{"id": "i1"}])
 
+    # ensure any accidental `op` subprocess calls are intercepted
+    def fake_run_cmd(cmd, capture_output=True, check=True, input=None):
+        if cmd[:3] == ["op", "vault", "list"]:
+            return 0, "[]", ""
+        return 0, "", ""
+
+    monkeypatch.setattr(exporter_module, "run_cmd", fake_run_cmd)
+
     # simulate a failure when fetching the full item
     def fail_get_item(self, item_id):
         raise Exception("op item get failed: promptError")
