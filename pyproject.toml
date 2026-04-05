@@ -1,6 +1,6 @@
 [project]
 name = "onep-exporter"
-version = "0.1.0"
+version = "0.1.1"
 description = "Export 1Password vaults to JSON/Markdown and create local backups"
 readme = "README.md"
 requires-python = ">=3.9"
