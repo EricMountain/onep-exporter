@@ -589,9 +589,15 @@ class BrowseApp(App):
     def _apply_filter(self, search_text: str = "") -> None:
         text = search_text.strip().lower()
         if text:
+            # Split the search text into whitespace-separated tokens and
+            # require that every token appears in the item's title (AND).
+            tokens = [t for t in re.split(r"\s+", text) if t]
+            def _matches_tokens(it: dict) -> bool:
+                hay = (it.get("title") or "").lower()
+                return all(tok in hay for tok in tokens)
+
             self._filtered_items = [
-                it for it in self._all_items
-                if text in (it.get("title") or "").lower()
+                it for it in self._all_items if _matches_tokens(it)
             ]
         else:
             self._filtered_items = list(self._all_items)
