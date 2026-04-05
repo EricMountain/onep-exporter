@@ -214,6 +214,34 @@ class SecretLabel(Static):
         self.app.notify(f'Copied "{self._field_name}" to clipboard', timeout=2)
 
 
+class ValueLabel(Static):
+    """Shows a field label and value; clicking copies the value."""
+
+    DEFAULT_CSS = """
+    ValueLabel {
+        color: $text;
+    }
+    ValueLabel:hover {
+        background: $boost;
+    }
+    """
+
+    def __init__(self, field_name: str, value: str) -> None:
+        self._field_name = field_name
+        self._value = value
+        # build a Text where label is styled (markup) and value is plain
+        text = Text.from_markup(_style_label(field_name) + ": ") + Text(str(value))
+        super().__init__(text)
+
+    def on_enter(self) -> None:
+        # no reveal behaviour; keep label styled and value plain
+        pass
+
+    def on_click(self) -> None:
+        self.app.copy_to_clipboard(self._value)
+        self.app.notify(f'Copied "{self._field_name}" to clipboard', timeout=2)
+
+
 class TotpLabel(Static):
     """Shows a live TOTP code with segmented progress bar and traffic-light colour."""
 
@@ -417,7 +445,9 @@ def _build_item_widgets(item: dict) -> List:
             flush()
             widgets.append(SecretLabel(name, value))
         else:
-            pending.append(Text("- ") + Text.from_markup(_style_label(name) + ": ") + Text(str(value)))
+            # make non-sensitive values clickable/copiable
+            flush()
+            widgets.append(ValueLabel(name, value))
 
     if note := item.get("notesPlain"):
         pending.append(Text("---"))
