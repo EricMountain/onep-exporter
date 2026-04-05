@@ -16,6 +16,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, OptionList, Static
 from textual.strip import Strip
 from textual.timer import Timer
+from rich.text import Text
 from .config import load_config, save_config
 from .query import _iter_exported_items
 from .templates import _totp_now
@@ -199,13 +200,14 @@ class SecretLabel(Static):
     def __init__(self, field_name: str, secret: str) -> None:
         self._field_name = field_name
         self._secret = secret
-        super().__init__(f"- {field_name}: \u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", markup=False)
+        display = f"- {_style_label(field_name)}: \u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+        super().__init__(Text.from_markup(display))
 
     def on_enter(self) -> None:
-        self.update(f"- {self._field_name}: {self._secret}")
+        self.update(Text.from_markup(f"- {_style_label(self._field_name)}: {_escape_value(self._secret)}"))
 
     def on_leave(self) -> None:
-        self.update(f"- {self._field_name}: \u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022")
+        self.update(Text.from_markup(f"- {_style_label(self._field_name)}: \u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"))
 
     def on_click(self) -> None:
         self.app.copy_to_clipboard(self._secret)
@@ -242,7 +244,7 @@ class TotpLabel(Static):
         self._otpauth = otpauth
         self._period = period
         self._revealed = False
-        super().__init__(self._masked(), markup=False)
+        super().__init__(Text.from_markup(self._masked()))
 
     def _seconds_remaining(self) -> int:
         return self._period - int(_time.time()) % self._period
@@ -264,11 +266,11 @@ class TotpLabel(Static):
 
     def _masked(self) -> str:
         secs = self._seconds_remaining()
-        return f"- {self._field_name}: \u2022\u2022\u2022\u2022\u2022\u2022  {self._bar(secs)} {secs:2}s"
+        return f"- {_style_label(self._field_name)}: \u2022\u2022\u2022\u2022\u2022\u2022  {self._bar(secs)} {secs:2}s"
 
     def _revealed_text(self) -> str:
         secs = self._seconds_remaining()
-        return f"- {self._field_name}: {self._current_code()}  {self._bar(secs)} {secs:2}s"
+        return f"- {_style_label(self._field_name)}: {_escape_value(self._current_code())}  {self._bar(secs)} {secs:2}s"
 
     def _update_color(self) -> None:
         secs = self._seconds_remaining()
@@ -284,15 +286,15 @@ class TotpLabel(Static):
 
     def _tick(self) -> None:
         self._update_color()
-        self.update(self._revealed_text() if self._revealed else self._masked())
+        self.update(Text.from_markup(self._revealed_text() if self._revealed else self._masked()))
 
     def on_enter(self) -> None:
         self._revealed = True
-        self.update(self._revealed_text())
+        self.update(Text.from_markup(self._revealed_text()))
 
     def on_leave(self) -> None:
         self._revealed = False
-        self.update(self._masked())
+        self.update(Text.from_markup(self._masked()))
 
     def on_click(self) -> None:
         code = self._current_code()
@@ -317,35 +319,89 @@ def _get_totp_period(value: str) -> int:
     return 30
 
 
+def _md_to_rich(s: str) -> str:
+    """Convert a tiny subset of Markdown to Rich markup for Textual.
+
+    - Leading `# ` -> bold heading
+    - `**bold**` -> [bold]...[/bold]
+    - `_italic_` -> [italic]...[/italic]
+    - Inline code using backticks -> [bold]...[/bold]
+    """
+    if s.startswith("# "):
+        return f"[bold]{s[2:]}[/bold]"
+    s = re.sub(r"\*\*(.+?)\*\*", r"[bold]\1[/bold]", s)
+    # only treat underscores as italics when they're not inside words
+    s = re.sub(r"(?<!\w)_(.+?)_(?!\w)", r"[italic]\1[/italic]", s)
+    s = re.sub(r"`(.+?)`", r"[bold]\1[/bold]", s)
+    return s
+
+
+def _style_label(s: str) -> str:
+    """Style a field/label string (honour **bold**, _italic_, `code`)."""
+    s = re.sub(r"\*\*(.+?)\*\*", r"[bold]\1[/bold]", s)
+    s = re.sub(r"(?<!\w)_(.+?)_(?!\w)", r"[italic]\1[/italic]", s)
+    s = re.sub(r"`(.+?)`", r"[bold]\1[/bold]", s)
+    return s
+
+
+def _escape_value(s: str) -> str:
+    """Escape Rich markup-sensitive characters in values so they render plain."""
+    if s is None:
+        return ""
+    s = str(s)
+    s = s.replace("\\", "\\\\")
+    s = s.replace("[", "\\[")
+    s = s.replace("]", "\\]")
+    # also escape common markdown triggers so they aren't interpreted
+    s = s.replace("_", "\\_")
+    s = s.replace("*", "\\*")
+    s = s.replace("`", "\\`")
+    return s
+
+
 def _build_item_widgets(item: dict) -> List:
     """Build a list of Static / SecretLabel / TotpLabel widgets that render *item*."""
     widgets: List = []
-    pending: List[str] = []
+    pending: List[Text] = []
 
     def flush() -> None:
         if pending:
-            widgets.append(Static("\n".join(pending), markup=False))
+            combined = Text()
+            for i, part in enumerate(pending):
+                if i:
+                    combined.append("\n")
+                combined.append(part)
+            widgets.append(Static(combined))
             pending.clear()
 
     title = item.get("title") or item.get("name") or "(no title)"
-    pending.append(f"# {title}")
-    pending.append("")
+    pending.append(Text.from_markup(_md_to_rich(f"# {title}")))
+    pending.append(Text(""))
 
     if category := item.get("category"):
-        pending.append(f"Category: {category}")
+        pending.append(Text.from_markup(_style_label('Category') + ": ") + Text(str(category)))
     if tags := item.get("tags"):
-        pending.append(f"Tags: {', '.join(tags)}")
+        pending.append(Text.from_markup(_style_label('Tags') + ": ") + Text(', '.join(tags)))
 
     for url in item.get("urls", []):
         href = url.get("href") or url.get("url") or ""
         label = url.get("label", "")
         if href:
-            pending.append(f"- {(label + ' ' + href).strip()}")
+            if label:
+                pending.append(Text("- ") + Text.from_markup(_style_label(label) + " ") + Text(href))
+            else:
+                pending.append(Text("- ") + Text(href))
 
-    pending.append("")
+    pending.append(Text(""))
 
     for f in item.get("fields", []):
-        name = f.get("name") or f.get("label") or "field"
+        # Prefer `purpose` (lowercased) when present, otherwise fall back
+        # to label, name, type, or a generic fallback.
+        purpose = f.get("purpose")
+        if purpose:
+            name = purpose.lower()
+        else:
+            name = f.get("label") or f.get("name") or f.get("type") or "field"
         value = f.get("value")
         if not value:
             continue
@@ -356,16 +412,16 @@ def _build_item_widgets(item: dict) -> List:
                 period = _get_totp_period(value)
                 widgets.append(TotpLabel(f"{name} (TOTP)", value, period))
             else:
-                pending.append(f"- {name}: (TOTP \u2014 unable to generate code)")
+                pending.append(Text("- ") + Text.from_markup(_style_label(name) + ": ") + Text("(TOTP — unable to generate code)"))
         elif _field_is_sensitive(f):
             flush()
             widgets.append(SecretLabel(name, value))
         else:
-            pending.append(f"- {name}: {value}")
+            pending.append(Text("- ") + Text.from_markup(_style_label(name) + ": ") + Text(str(value)))
 
     if note := item.get("notesPlain"):
-        pending.append("---")
-        pending.append(note)
+        pending.append(Text("---"))
+        pending.append(Text(str(note)))
 
     flush()
     return widgets
@@ -551,20 +607,21 @@ class BrowseApp(App):
         lines = [
             f"# {self._archive_path.name}",
             "",
-            f"**Path:** `{self._archive_path}`",
-            f"**Items loaded:** {total}",
+            f"{_style_label('Path')}: {_escape_value(self._archive_path)}",
+            f"{_style_label('Items loaded')}: {_escape_value(total)}",
         ]
         if vaults:
-            lines.append(f"**Vaults:** {', '.join(sorted(vaults))}")
+            lines.append(f"{_style_label('Vaults')}: {_escape_value(', '.join(sorted(vaults)))}")
         if categories:
             lines.append("")
-            lines.append("**By category:**")
+            lines.append(_style_label('By category:'))
             for cat, count in sorted(categories.items(), key=lambda x: -x[1]):
-                lines.append(f"- {cat}: {count}")
+                lines.append(f"- {_escape_value(cat)}: {_escape_value(count)}")
         if total == 0:
             lines += ["", "⚠ No items found — check the archive path."]
+        rendered = "\n".join(_md_to_rich(line) if line.startswith('# ') else line for line in lines)
         self.query_one("#detail", ItemDetail).set_content(
-            Static("\n".join(lines), markup=False)
+            Static(Text.from_markup(rendered))
         )
         self._update_status()
 
