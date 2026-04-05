@@ -204,7 +204,7 @@ class SecretLabel(Static):
         super().__init__(Text.from_markup(display))
 
     def on_enter(self) -> None:
-        self.update(Text.from_markup(f"- {_style_label(self._field_name)}: {_escape_value(self._secret)}"))
+        self.update(Text.from_markup(f"- {_style_label(self._field_name)}: ") + Text(str(self._secret)))
 
     def on_leave(self) -> None:
         self.update(Text.from_markup(f"- {_style_label(self._field_name)}: \u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"))
@@ -272,7 +272,7 @@ class TotpLabel(Static):
         self._otpauth = otpauth
         self._period = period
         self._revealed = False
-        super().__init__(Text.from_markup(self._masked()))
+        super().__init__(self._masked())
 
     def _seconds_remaining(self) -> int:
         return self._period - int(_time.time()) % self._period
@@ -292,13 +292,19 @@ class TotpLabel(Static):
             return "totp-warning"
         return "totp-urgent"
 
-    def _masked(self) -> str:
+    def _masked(self) -> Text:
         secs = self._seconds_remaining()
-        return f"- {_style_label(self._field_name)}: \u2022\u2022\u2022\u2022\u2022\u2022  {self._bar(secs)} {secs:2}s"
+        txt = Text.from_markup(f"- {_style_label(self._field_name)}: ")
+        txt.append(Text("\u2022\u2022\u2022\u2022\u2022\u2022  "))
+        txt.append(Text(f"{self._bar(secs)} {secs:2}s"))
+        return txt
 
-    def _revealed_text(self) -> str:
+    def _revealed_text(self) -> Text:
         secs = self._seconds_remaining()
-        return f"- {_style_label(self._field_name)}: {_escape_value(self._current_code())}  {self._bar(secs)} {secs:2}s"
+        txt = Text.from_markup(f"- {_style_label(self._field_name)}: ")
+        txt.append(Text(str(self._current_code())))
+        txt.append(Text(f"  {self._bar(secs)} {secs:2}s"))
+        return txt
 
     def _update_color(self) -> None:
         secs = self._seconds_remaining()
@@ -314,15 +320,15 @@ class TotpLabel(Static):
 
     def _tick(self) -> None:
         self._update_color()
-        self.update(Text.from_markup(self._revealed_text() if self._revealed else self._masked()))
+        self.update(self._revealed_text() if self._revealed else self._masked())
 
     def on_enter(self) -> None:
         self._revealed = True
-        self.update(Text.from_markup(self._revealed_text()))
+        self.update(self._revealed_text())
 
     def on_leave(self) -> None:
         self._revealed = False
-        self.update(Text.from_markup(self._masked()))
+        self.update(self._masked())
 
     def on_click(self) -> None:
         code = self._current_code()
@@ -355,36 +361,30 @@ def _md_to_rich(s: str) -> str:
     - `_italic_` -> [italic]...[/italic]
     - Inline code using backticks -> [bold]...[/bold]
     """
+    # Escape literal square brackets to avoid accidental Rich markup
+    s = s.replace("[", "\\[")
     if s.startswith("# "):
         return f"[bold]{s[2:]}[/bold]"
-    s = re.sub(r"\*\*(.+?)\*\*", r"[bold]\1[/bold]", s)
+    # Only treat **bold** when markers are not inside a word
+    s = re.sub(r"(?<!\w)\*\*(.+?)\*\*(?!\w)", r"[bold]\1[/bold]", s)
     # only treat underscores as italics when they're not inside words
     s = re.sub(r"(?<!\w)_(.+?)_(?!\w)", r"[italic]\1[/italic]", s)
-    s = re.sub(r"`(.+?)`", r"[bold]\1[/bold]", s)
+    # Only treat `code` when markers are not inside a word
+    s = re.sub(r"(?<!\w)`(.+?)`(?!\w)", r"[bold]\1[/bold]", s)
     return s
 
 
 def _style_label(s: str) -> str:
     """Style a field/label string (honour **bold**, _italic_, `code`)."""
-    s = re.sub(r"\*\*(.+?)\*\*", r"[bold]\1[/bold]", s)
-    s = re.sub(r"(?<!\w)_(.+?)_(?!\w)", r"[italic]\1[/italic]", s)
-    s = re.sub(r"`(.+?)`", r"[bold]\1[/bold]", s)
-    return s
-
-
-def _escape_value(s: str) -> str:
-    """Escape Rich markup-sensitive characters in values so they render plain."""
-    if s is None:
-        return ""
-    s = str(s)
-    s = s.replace("\\", "\\\\")
+    # Escape literal square brackets to avoid accidental Rich markup
     s = s.replace("[", "\\[")
-    s = s.replace("]", "\\]")
-    # also escape common markdown triggers so they aren't interpreted
-    s = s.replace("_", "\\_")
-    s = s.replace("*", "\\*")
-    s = s.replace("`", "\\`")
+    # Only treat **bold** when markers are not inside a word
+    s = re.sub(r"(?<!\w)\*\*(.+?)\*\*(?!\w)", r"[bold]\1[/bold]", s)
+    s = re.sub(r"(?<!\w)_(.+?)_(?!\w)", r"[italic]\1[/italic]", s)
+    # Only treat `code` when markers are not inside a word
+    s = re.sub(r"(?<!\w)`(.+?)`(?!\w)", r"[bold]\1[/bold]", s)
     return s
+
 
 
 def _build_item_widgets(item: dict) -> List:
@@ -634,25 +634,31 @@ class BrowseApp(App):
             if v := (it.get("vault") or {}).get("name"):
                 vaults.add(v)
 
-        lines = [
-            f"# {self._archive_path.name}",
-            "",
-            f"{_style_label('Path')}: {_escape_value(self._archive_path)}",
-            f"{_style_label('Items loaded')}: {_escape_value(total)}",
-        ]
+        # Build a Text object where headings and labels are styled, values are plain
+        combined = Text()
+        combined.append(Text.from_markup(_md_to_rich(f"# {self._archive_path.name}")))
+        combined.append("\n\n")
+        combined.append(Text.from_markup(_style_label('Path') + ": "))
+        combined.append(Text(str(self._archive_path)))
+        combined.append("\n")
+        combined.append(Text.from_markup(_style_label('Items loaded') + ": "))
+        combined.append(Text(str(total)))
         if vaults:
-            lines.append(f"{_style_label('Vaults')}: {_escape_value(', '.join(sorted(vaults)))}")
+            combined.append("\n")
+            combined.append(Text.from_markup(_style_label('Vaults') + ": "))
+            combined.append(Text(', '.join(sorted(vaults))))
         if categories:
-            lines.append("")
-            lines.append(_style_label('By category:'))
+            combined.append("\n\n")
+            combined.append(Text.from_markup(_style_label('By category:')))
             for cat, count in sorted(categories.items(), key=lambda x: -x[1]):
-                lines.append(f"- {_escape_value(cat)}: {_escape_value(count)}")
+                combined.append("\n")
+                combined.append(Text("- "))
+                combined.append(Text(str(cat)))
+                combined.append(Text(": "))
+                combined.append(Text(str(count)))
         if total == 0:
-            lines += ["", "⚠ No items found — check the archive path."]
-        rendered = "\n".join(_md_to_rich(line) if line.startswith('# ') else line for line in lines)
-        self.query_one("#detail", ItemDetail).set_content(
-            Static(Text.from_markup(rendered))
-        )
+            combined.append("\n\n⚠ No items found — check the archive path.")
+        self.query_one("#detail", ItemDetail).set_content(Static(combined))
         self._update_status()
 
     # --- status bar ----------------------------------------------------------
