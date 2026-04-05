@@ -83,7 +83,6 @@ pipx uninstall onep-exporter
 - Your saved configuration and any stored passphrases are preserved across upgrades (the config live under `~/.config/1p-exporter/`).  
 - If you need help connecting `op` (1Password CLI), see the [1Password CLI docs](https://developer.1password.com/docs/cli/).
 
-
 ## Encryption
 
 - `gpg` (symmetric): passphrase via `BACKUP_PASSPHRASE` env or prompt.
