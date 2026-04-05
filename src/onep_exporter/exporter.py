@@ -212,7 +212,7 @@ class OpExporter:
                 if vault != v.get("id") and vault != v.get("name"):
                     return None
             return item
-        except CommandError:
+        except (CommandError, RuntimeError):
             return None
 
     def store_passphrase_in_1password(self, title: str, field_name: str, passphrase: str, vault: Optional[str] = None) -> dict:
