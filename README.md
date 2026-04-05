@@ -18,14 +18,108 @@ Note: the Python import package name remains `onep_exporter` (use `import onep_e
 ## Prerequisites
 
 - `op` — 1Password CLI
-- `age` and/or `gpg` — for encryption (install via Homebrew or your distro package manager)
+  - MacOS `brew install 1password-cli`
+- `age` for encryption (install via Homebrew or your distro package manager)
+  - MacOS `brew install age`
 - macOS: `security` CLI (built‑in) or Python `keyring` for Keychain integration
 
 ## Installation
 
-```bash
-python -m pip install -e .
+1. Install pipx (only once):
+
+   - macOS / Linux:
+
+     ```shell
+     python3 -m pip install --user pipx
+     # or
+     brew install pipx
+
+     python3 -m pipx ensurepath
+     ```
+
+   - Windows (PowerShell):
+
+     ```shell
+     python -m pip install --user pipx
+     python -m pipx ensurepath
+     ```
+
+   Restart your shell after `ensurepath`.
+
+2. Install 1p-exporter (not published on PyPI)
+
+   Install using `pipx` from the project's Git repository, or install from source.
+
+   - Install via `pipx` from GitHub (recommended):
+
+     ```shell
+     pipx install git+https://github.com/<owner>/<repo>.git
+     ```
+
+   - Or install from local source if checked out (development):
+
+     ```shell
+     python3 -m pipx install --user .
+     ```
+
+### Quick verification
+
+After installation, check the CLI is available:
+
+```shell
+onep-exporter --help   # or try 1p-exporter --help
 ```
+
+If neither command runs, use:
+
+```shell
+python -m onep_exporter --help
+```
+
+### First-time setup (after install)
+
+1. Ensure the 1Password CLI is signed in:
+
+   ```shell
+   op signin
+   ```
+
+2. Run the interactive setup to create and store an encryption passphrase and save defaults:
+
+   ```shell
+   onep-exporter init
+   ```
+
+3. Create a backup:
+
+   ```shell
+   onep-exporter backup --output ~/onep-backups
+   ```
+
+### Updating
+
+- If installed with `pipx` from a Git URL, re-run the same `pipx install` command to upgrade, or:
+
+  ```shell
+  pipx upgrade --pip-args="--upgrade" 1p-exporter
+  ```
+
+### Uninstall
+
+- pipx:
+
+  ```shell
+  pipx uninstall 1p-exporter
+  ```
+
+### Configuration
+
+Default config file: `~/.config/1p-exporter/config.json` (set `ONEP_EXPORTER_CONFIG` to override). On Windows the tool uses an XDG-style `~/.config/1p-exporter/config.json` path.
+
+### Notes & troubleshooting
+
+- Your saved configuration and any stored passphrases are preserved across upgrades (the config live under `~/.config/1p-exporter/`).  
+- If you need help connecting `op` (1Password CLI), see the [1Password CLI docs](https://developer.1password.com/docs/cli/).
 
 ## Quick start
 
