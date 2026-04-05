@@ -169,7 +169,7 @@ def resolve_age_config(
 
 
 def resolve_decrypt_credentials(
-    cfg: dict, *, verbose: bool = True
+    cfg: dict, *, verbose: Optional[bool] = None
 ) -> tuple[Optional[Union[str, tuple[str, str]]], Optional[str]]:
     """Resolve credentials for age decryption, preferring **local** stores.
 
@@ -200,6 +200,11 @@ def resolve_decrypt_credentials(
     def _log(msg: str) -> None:
         if verbose:
             print(msg, file=sys.stderr)
+
+    # if caller didn't explicitly request verbose output, respect the
+    # ONEP_EXPORTER_VERBOSE environment variable (off by default)
+    if verbose is None:
+        verbose = bool(os.environ.get("ONEP_EXPORTER_VERBOSE"))
 
     _log("resolving age decryption credentials …")
     _log(f"  config: {_config_file_path()}")

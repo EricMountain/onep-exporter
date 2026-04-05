@@ -19,6 +19,12 @@ from .templates import item_to_md
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="onep-exporter", description="Export 1Password vaults and create backups")
+    p.add_argument(
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="enable verbose output (overrides config)",
+    )
     sub = p.add_subparsers(dest="cmd")
 
     b = sub.add_parser(
@@ -191,6 +197,10 @@ def _setup_query_env(args) -> None:
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # enable verbose logging when requested on the CLI
+    if getattr(args, "verbose", False):
+        os.environ["ONEP_EXPORTER_VERBOSE"] = "1"
 
     if args.cmd == "backup":
         # merge saved config with CLI args (CLI overrides saved config)
