@@ -27,24 +27,11 @@ Note: the Python import package name remains `onep_exporter` (use `import onep_e
 
 1. Install pipx (only once):
 
-   - macOS / Linux:
-
      ```shell
      python3 -m pip install --user pipx
-     # or
+     # or use OS package manager, e.g:
      brew install pipx
-
-     python3 -m pipx ensurepath
      ```
-
-   - Windows (PowerShell):
-
-     ```shell
-     python -m pip install --user pipx
-     python -m pipx ensurepath
-     ```
-
-   Restart your shell after `ensurepath`.
 
 2. Install 1p-exporter (not published on PyPI)
 
