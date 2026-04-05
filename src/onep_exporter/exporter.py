@@ -666,6 +666,7 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
         meta_item = {
             "id": "__backup_metadata__",
             "title": "__ 1p-backup - archive metadata __",
+            "category": "SECURE_NOTE",
             "vault": {"id": "__backup_metadata__", "name": "__ 1p-backup metadata __"},
             "fields": [{"label": "summary", "value": md_text}],
             "notes": json.dumps({"meta": meta}),

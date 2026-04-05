@@ -230,7 +230,7 @@ class ValueLabel(Static):
         self._field_name = field_name
         self._value = value
         # build a Text where label is styled (markup) and value is plain
-        text = Text.from_markup(_style_label(field_name) + ": ") + Text(str(value))
+        text = Text.from_markup(f"- {_style_label(field_name)}: ") + Text(str(value))
         super().__init__(text)
 
     def on_enter(self) -> None:
@@ -391,6 +391,7 @@ def _build_item_widgets(item: dict) -> List:
     """Build a list of Static / SecretLabel / TotpLabel widgets that render *item*."""
     widgets: List = []
     pending: List[Text] = []
+    header_added = False
 
     def flush() -> None:
         if pending:
@@ -407,20 +408,29 @@ def _build_item_widgets(item: dict) -> List:
     pending.append(Text(""))
 
     if category := item.get("category"):
-        pending.append(Text.from_markup(_style_label('Category') + ": ") + Text(str(category)))
+        key = (category or "").upper()
+        icon = _CATEGORY_ICONS.get(key, "\U0001f4e6")
+        nice = str(category).replace("_", " ").title()
+        pending.append(Text(f"{icon} {nice}"))
+        pending.append(Text(""))
+
     if tags := item.get("tags"):
         pending.append(Text.from_markup(_style_label('Tags') + ": ") + Text(', '.join(tags)))
+        pending.append(Text(""))
 
-    for url in item.get("urls", []):
-        href = url.get("href") or url.get("url") or ""
-        label = url.get("label", "")
-        if href:
-            if label:
-                pending.append(Text("- ") + Text.from_markup(_style_label(label) + " ") + Text(href))
-            else:
-                pending.append(Text("- ") + Text(href))
+    urls = item.get("urls", [])
+    if urls and len(urls) > 0:
+        pending.append(Text("URLs:"))
+        for url in urls:
+            href = url.get("href") or url.get("url") or ""
+            label = url.get("label", "")
+            if href:
+                if label:
+                    pending.append(Text("- ") + Text.from_markup(_style_label(label) + " ") + Text(href))
+                else:
+                    pending.append(Text("- ") + Text(href))
 
-    pending.append(Text(""))
+        pending.append(Text(""))
 
     for f in item.get("fields", []):
         # Prefer `purpose` (lowercased) when present, otherwise fall back
@@ -433,6 +443,10 @@ def _build_item_widgets(item: dict) -> List:
         value = f.get("value")
         if not value:
             continue
+        # Insert a single "Fields" header before the first rendered field
+        if not header_added:
+            pending.append(Text.from_markup(_style_label('Fields') + ":"))
+            header_added = True
         ftype = (f.get("type") or "").upper()
         if ftype in ("OTP", "TOTP"):
             flush()
