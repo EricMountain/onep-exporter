@@ -242,6 +242,64 @@ class ValueLabel(Static):
         self.app.notify(f'Copied "{self._field_name}" to clipboard', timeout=2)
 
 
+class Notes(Static):
+    """Render multi-line notes with simple markdown, indented and with a
+    vertical bar on the left for visual separation."""
+
+    DEFAULT_CSS = """
+    Notes {
+        color: $accent;
+        padding: 0 0 0 1;
+    }
+    Notes:hover {
+        background: $boost;
+    }
+    """
+
+    def __init__(self, note: str) -> None:
+        self._note = str(note)
+        # Convert a tiny subset of markdown to Rich markup and render each
+        # line with a left bar prefix to create an indented block effect.
+        markup = _md_to_rich(self._note)
+        lines = markup.splitlines()
+        txt = Text()
+        for i, line in enumerate(lines):
+            if i:
+                txt.append("\n")
+            # vertical bar prefix (muted), then the rendered markdown line
+            txt.append(Text("│ ", style="dim"))
+            if line.strip():
+                txt.append(Text.from_markup(line))
+        super().__init__(txt)
+
+    def on_click(self) -> None:
+        self.app.copy_to_clipboard(self._note)
+        self.app.notify('Copied note to clipboard', timeout=2)
+
+
+class NotesLabel(Static):
+    """Clickable label for notes; copies the raw note text to clipboard."""
+
+    DEFAULT_CSS = """
+    NotesLabel {
+        color: $text;
+    }
+    NotesLabel:hover {
+        background: $boost;
+    }
+    """
+
+    def __init__(self, field_name: str, note: str) -> None:
+        self._field_name = field_name
+        self._note = note
+        text = Text.from_markup(f"- {_style_label(field_name)}:")
+        super().__init__(text)
+
+    def on_click(self) -> None:
+        self.app.copy_to_clipboard(self._note)
+        self.app.notify(f'Copied "{self._field_name}" to clipboard', timeout=2)
+
+
 class TotpLabel(Static):
     """Shows a live TOTP code with segmented progress bar and traffic-light colour."""
 
@@ -447,6 +505,13 @@ def _build_item_widgets(item: dict) -> List:
         if not header_added:
             pending.append(Text.from_markup(_style_label('Fields') + ":"))
             header_added = True
+        # Special-case notes stored as a field with purpose NOTES and id notesPlain
+        if (purpose or "").upper() == "NOTES" and (f.get("id") or "") == "notesPlain":
+            flush()
+            # show the field label (e.g. "- Notes:") then the indented notes block
+            widgets.append(NotesLabel(name, value))
+            widgets.append(Notes(value))
+            continue
         ftype = (f.get("type") or "").upper()
         if ftype in ("OTP", "TOTP"):
             flush()
@@ -464,8 +529,9 @@ def _build_item_widgets(item: dict) -> List:
             widgets.append(ValueLabel(name, value))
 
     if note := item.get("notesPlain"):
-        pending.append(Text("---"))
-        pending.append(Text(str(note)))
+        flush()
+        widgets.append(NotesLabel("Notes", note))
+        widgets.append(Notes(note))
 
     flush()
     return widgets
