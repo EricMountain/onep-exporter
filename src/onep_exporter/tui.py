@@ -260,8 +260,7 @@ class Notes(Static):
         self._note = str(note)
         # Convert a tiny subset of markdown to Rich markup and render each
         # line with a left bar prefix to create an indented block effect.
-        markup = _md_to_rich(self._note)
-        lines = markup.splitlines()
+        lines = self._note.splitlines()
         txt = Text()
         for i, line in enumerate(lines):
             if i:
@@ -269,7 +268,7 @@ class Notes(Static):
             # vertical bar prefix (muted), then the rendered markdown line
             txt.append(Text("│ ", style="dim"))
             if line.strip():
-                txt.append(Text.from_markup(line))
+                txt.append(Text.from_markup(_md_to_rich(line)))
         super().__init__(txt)
 
     def on_click(self) -> None:
