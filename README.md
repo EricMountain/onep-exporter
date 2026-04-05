@@ -15,29 +15,17 @@ Note: the Python import package name remains `onep_exporter` (use `import onep_e
 - Interactive `init` flow and persistent configuration (`~/.config/1p-exporter/config.json`)
 - Helpers to store/retrieve passphrases in 1Password or macOS Keychain (Touch ID supported)
 
-## Prerequisites
-
-- `op` — 1Password CLI
-  - MacOS `brew install 1password-cli`
-- `age` for encryption (install via Homebrew or your distro package manager)
-  - MacOS `brew install age`
-- macOS: `security` CLI (built‑in) or Python `keyring` for Keychain integration
-
 ## Installation
 
-1. Install pipx (only once):
+1. Install `pipx`, 1Password CLI (`op`) and `age` using the system package manager, e.g:
 
      ```shell
-     # Install pipx using OS package manager, e.g:
      brew install pipx
-
-     # or
-     python3 -m pip install --user pipx
+     brew install 1password-cli
+     brew install age
      ```
 
-2. Install 1p-exporter (not published on PyPI)
-
-   Install using `pipx` from the project's Git repository, or install from source.
+2. Install 1p-exporter
 
    - Install via `pipx` from GitHub (recommended):
 
@@ -51,87 +39,50 @@ Note: the Python import package name remains `onep_exporter` (use `import onep_e
      python3 -m pipx install --user .
      ```
 
-### Quick verification
+### Setup
 
-After installation, check the CLI is available:
+- Ensure the 1Password app has [1Password CLI integration enabled](https://developer.1password.com/docs/cli/app-integration/#set-up-the-app-integration)
+  - Settings → Developer → Integrate with 1Password CLI
 
-```shell
-onep-exporter --help   # or try 1p-exporter --help
-```
-
-If neither command runs, use:
-
-```shell
-python -m onep_exporter --help
-```
-
-### First-time setup (after install)
-
-1. Ensure the 1Password CLI is signed in:
-
-   ```shell
-   op signin
-   ```
-
-2. Run the interactive setup to create and store an encryption passphrase and save defaults:
+- Run interactive setup
 
    ```shell
    onep-exporter init
    ```
 
-3. Create a backup:
+- Create a backup
 
    ```shell
-   onep-exporter backup --output ~/onep-backups
+   onep-exporter backup
    ```
+
+- Browse the backup
+
+    ```shell
+    onep-exporter browse
+    ```
 
 ### Updating
 
-- If installed with `pipx` from a Git URL, re-run the same `pipx install` command to upgrade, or:
+If installed with `pipx` from a Git URL, re-run the same `pipx install` command to upgrade, or:
 
-  ```shell
-  pipx upgrade --pip-args="--upgrade" 1p-exporter
-  ```
+```shell
+pipx upgrade --pip-args="--upgrade" onep-exporter
+```
 
 ### Uninstall
 
-- pipx:
+pipx:
 
-  ```shell
-  pipx uninstall 1p-exporter
-  ```
+```shell
+pipx uninstall onep-exporter
+```
 
 ### Notes & troubleshooting
 
 - Your saved configuration and any stored passphrases are preserved across upgrades (the config live under `~/.config/1p-exporter/`).  
 - If you need help connecting `op` (1Password CLI), see the [1Password CLI docs](https://developer.1password.com/docs/cli/).
 
-## Quick start
-
-Sign in (interactive):
-
-```bash
-op signin <your-domain>
-# or
-1p-exporter init --signin
-```
-
-Run a backup (unencrypted):
-
-```bash
-1p-exporter backup --output ~/onep-backups
-```
-
-Verify the backup:
-
-```bash
-1p-exporter verify ~/onep-backups/<timestamp>/manifest.json
-```
-
-## Interactive setup & helpers
-
-- `1p-exporter init` — interactive configuration; can generate/store an `age` passphrase in 1Password or Keychain and persists defaults.
-- Programmatic helpers: `configure_interactive()`, `init_setup()`, `OpExporter.signin_interactive()`
 
 ## Encryption
 
@@ -149,14 +100,15 @@ Verify the backup:
   the prompt is skipped – the recipient list takes precedence.)  The
   `doctor` command also checks for conflicting settings and will report an
   error before you run a backup.
+
 Examples:
 
 ```bash
 # age passphrase from a 1Password item (field defaults to "passphrase")
-1p-exporter backup --encrypt age --age-pass-source 1password --age-pass-item "Backup Passphrase"
+onep-exporter backup --encrypt age --age-pass-source 1password --age-pass-item "Backup Passphrase"
 
-# age passphrase from macOS Keychain (Touch ID may prompt)
-1p-exporter backup --encrypt age --age-pass-source keychain
+# age passphrase from macOS Keychain
+onep-exporter backup --encrypt age --age-pass-source keychain
 ```
 
 By default the tool looks for a field named **passphrase** in the referenced
@@ -188,16 +140,10 @@ Use the `init` subcommand to build a config.
 
 ```bash
 # find every exported item whose title contains "github"
-1p-exporter query list github --dir ~/onep-backups/20250101T120000Z
+1p-exporter query list github
 ```
-
-- `1p-exporter query list <regexp> [--dir DIR]` — search exported JSON files for item titles matching a regular expression
 
 ## Development & tests
-
-```bash
-python -m pytest
-```
 
 ### Development environment (direnv)
 
@@ -210,31 +156,14 @@ direnv allow
 
 You can still run the package without direnv using `PYTHONPATH=src .venv/bin/python -m onep_exporter ...`.
 
+### Run tests
+
+```bash
+make test
+```
+
 ## References
 
 - 1Password CLI: [1Password CLI docs](https://developer.1password.com/docs/cli/)
 - age: [age encryption](https://age-encryption.org/)
 - sops: [mozilla/sops](https://github.com/mozilla/sops)
-
-## Dev Setup Notes
-
-### MacOS
-
-- Ensure `op` and `age` are installed
-  - `brew install 1password-cli`
-  - `brew install age`
-- Run `op account add`: should report 1Password CLI is connected with the 1Password app.
-- Run `op signin`: should be prompted to authorise 1Password access.
-  - **macOS "access data from other apps" prompt:**
-    The `op` CLI communicates with the 1Password desktop app through its group
-    container.  On macOS Sequoia (15+) this triggers an "App Data" permission
-    prompt: *"iTerm.app would like to access data from other apps."*
-    - Click **Allow** — the decision should be remembered.  If macOS keeps
-      prompting on every `op` call restart iTerm/Terminal.
-- [Setup](https://developer.1password.com/docs/cli/app-integration/#set-up-the-app-integration) the `op` to `1Password` integration
-- `python -m onep_exporter doctor`
-  - Need `age` and `op` installed.
-  - It's OK if the `config` is missing at this point.
-- `python -m onep_exporter init`
-  - Accept all defaults
-  - `doctor` run at the end should be all green
