@@ -27,6 +27,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .utils import run_cmd, write_json, sha256_file, ensure_tool, CommandError
+import time
 from .templates import vault_to_md
 from .encryption import (
     HashingWriter,
@@ -82,20 +83,48 @@ class OpExporter:
         Raises RuntimeError with actionable advice when the 1Password CLI
         indicates an interactive prompt or session/auth issue.
         """
-        try:
-            return run_cmd(cmd, **kwargs)
-        except CommandError as e:
-            stderr = getattr(e, "stderr", "") or ""
-            # common op client initialization error when no session token is set
-            if "promptError" in stderr or "error initializing client" in stderr:
-                raise RuntimeError(
-                    "1Password CLI (op) reported a client initialization error. "
-                    "This usually means no active session token is available or op needs interactive sign-in. "
-                    "Try running `op signin --raw` and setting the OP_SESSION_<account> environment variable, "
-                    "or sign in with the 1Password app (Touch ID may be required). "
-                    f"Original error: {e}")
-            # otherwise re-raise a generic runtime error including the command output
-            raise RuntimeError(f"op command failed: {e}")
+        max_attempts = kwargs.pop("_retries", 3)
+        backoff_base = kwargs.pop("_backoff", 0.5)
+        last_exc = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return run_cmd(cmd, **kwargs)
+            except CommandError as e:
+                last_exc = e
+                stderr = getattr(e, "stderr", "") or ""
+                # if this was the last attempt, break out to handle/report
+                if attempt == max_attempts:
+                    break
+                # otherwise wait with exponential backoff and retry
+                sleep = backoff_base * (2 ** (attempt - 1))
+                try:
+                    time.sleep(sleep)
+                except Exception:
+                    pass
+                continue
+            except Exception as e:
+                last_exc = e
+                if attempt == max_attempts:
+                    break
+                sleep = backoff_base * (2 ** (attempt - 1))
+                try:
+                    time.sleep(sleep)
+                except Exception:
+                    pass
+                continue
+
+        # If we get here the command failed after retries.  Provide helpful
+        # messaging for common op client initialization errors, otherwise
+        # raise a generic RuntimeError including the command output.
+        stderr = getattr(last_exc, "stderr", "") or ""
+        if isinstance(last_exc, CommandError) and ("promptError" in stderr or "error initializing client" in stderr):
+            raise RuntimeError(
+                "1Password CLI (op) reported a client initialization error. "
+                "This usually means no active session token is available or op needs interactive sign-in. "
+                "Try running `op signin --raw` and setting the OP_SESSION_<account> environment variable, "
+                "or sign in with the 1Password app (Touch ID may be required). "
+                f"Original error: {last_exc}")
+        raise RuntimeError(f"op command failed: {last_exc}")
 
     def list_vaults(self) -> List[dict]:
         _, out, _ = self._op(["op", "vault", "list", "--format=json"])
@@ -176,7 +205,7 @@ class OpExporter:
         different vault than requested, treat as not found.
         """
         try:
-            _, out, _ = run_cmd(["op", "item", "get", title, "--format=json"])
+            _, out, _ = self._op(["op", "item", "get", title, "--format=json"], capture_output=True)
             item = json.loads(out)
             if vault:
                 v = item.get("vault") or {}
@@ -230,7 +259,7 @@ class OpExporter:
         # `-` tells op to read the item template from stdin
         cmd.append("-")
 
-        _, out, _ = run_cmd(cmd, input=json.dumps(payload).encode())
+        _, out, _ = self._op(cmd, input=json.dumps(payload).encode())
         return json.loads(out)
 
     def ensure_secrets_item(self, title: str, vault: Optional[str] = None) -> dict:
@@ -248,7 +277,7 @@ class OpExporter:
         if vault:
             cmd.extend(["--vault", vault])
         cmd.append("-")
-        _, out, _ = run_cmd(cmd, input=json.dumps(payload).encode())
+        _, out, _ = self._op(cmd, input=json.dumps(payload).encode())
         return json.loads(out)
 
     def upsert_item_field(self, item_id: str, field_label: str, value: str,
@@ -290,7 +319,7 @@ class OpExporter:
 
         # send modified item JSON back to op via stdin
         cmd = ["op", "item", "edit", "--format", "json", item_id, "-"]
-        _, out, _ = run_cmd(cmd, input=json.dumps(item).encode())
+        _, out, _ = self._op(cmd, input=json.dumps(item).encode())
         return json.loads(out)
 
     def signin_interactive(self, account: Optional[str] = None) -> str:
