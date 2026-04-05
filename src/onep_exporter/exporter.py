@@ -627,23 +627,9 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
 
     # build a human-readable metadata summary and include it in the archive
     try:
-        account_info = None
-        # best-effort account summary without invoking the `op` CLI (avoids
-        # requiring the 1Password app during test runs or on CI).  If a
-        # session env var is present record the account keys; otherwise note
-        # presence of service/connect tokens.
-        env = os.environ
-        session_accounts = [k.split("OP_SESSION_", 1)[1] for k in env.keys() if k.startswith("OP_SESSION_")]
-        account_info = {
-            "session_accounts": session_accounts,
-            "service_account_token": bool(env.get("OP_SERVICE_ACCOUNT_TOKEN")),
-            "connect_token": bool(env.get("OP_CONNECT_TOKEN")),
-        }
-
         meta = {
             "title": "__ 1p-backup - archive metadata __",
             "timestamp": ts,
-            "account": account_info,
             "vaults": manifest.get("vaults", []),
             "totals": {
                 "items": total_items,
@@ -660,16 +646,6 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
 
         # also include a small markdown summary for quick inspection
         lines = [f"# 1p-backup metadata", f"\n- timestamp: {ts}"]
-        if account_info:
-            try:
-                # try to present a concise account summary
-                if isinstance(account_info, list) and account_info:
-                    acct = account_info[0]
-                    lines.append(f"- account: {acct.get('email') or acct.get('name') or acct.get('id')}")
-                else:
-                    lines.append(f"- account: {account_info}")
-            except Exception:
-                lines.append("- account: <redacted>")
         lines.append("\n## Vaults")
         for v in manifest.get("vaults", []):
             lines.append(f"- {v.get('name') or v.get('id')} (id={v.get('id')}) — expected={v.get('expected')} items={v.get('items')} missing={v.get('missing')} errors={v.get('errors')}")
