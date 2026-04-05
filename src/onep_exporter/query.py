@@ -80,16 +80,17 @@ def _iter_exported_items(path: Union[str, Path]):
         except FileNotFoundError:
             raise RuntimeError("age not found for decryption")
 
+        # supply identity or passphrase via communicate(input=...)
+        input_bytes: Optional[bytes] = None
         if identity_bytes is not None:
-            proc.stdin.write(identity_bytes)
+            input_bytes = identity_bytes
         elif env_pass is not None:
             try:
-                proc.stdin.write(env_pass.encode() + b"\n")
+                input_bytes = env_pass.encode() + b"\n"
             except Exception:
-                pass
-        proc.stdin.close()
+                input_bytes = None
 
-        out_bytes, err_bytes = proc.communicate()
+        out_bytes, err_bytes = proc.communicate(input=input_bytes)
         rc = proc.returncode
         if rc != 0:
             err = err_bytes.decode(errors="ignore").strip()
@@ -99,7 +100,7 @@ def _iter_exported_items(path: Union[str, Path]):
             ):
                 err += (
                     "; ensure you have an age identity available "
-                    "(e.g. run `1p-exporter init` to store one in "
+                    "(e.g. run `onep-exporter init` to store one in "
                     "1Password, or use --age-identity/--age-passphrase)"
                 )
             raise RuntimeError(f"age decryption failed: {err or rc}")

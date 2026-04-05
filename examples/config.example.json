@@ -8,11 +8,11 @@
     "download_attachments": true,
     "age": {
         "pass_source": "prompt",
-        "pass_item": "1p-exporter backup - <your-username>",
+        "pass_item": "onep-exporter backup - <your-username>",
         "pass_field": "passphrase",
         "recipients": "",
         "use_yubikey": false,
-        "keychain_service": "1p-exporter",
+        "keychain_service": "onep-exporter",
         "keychain_username": "backup",
         "onepassword_vault": null
     }

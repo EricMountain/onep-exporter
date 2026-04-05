@@ -1,4 +1,4 @@
-"""Age/GPG encryption helpers for 1p-exporter."""
+"""Age/GPG encryption helpers for onep-exporter."""
 
 import hashlib
 import re
@@ -195,7 +195,7 @@ def resolve_decrypt_credentials(
     from .keychain import get_passphrase_from_keychain
 
     age_cfg = cfg.get("age", {})
-    kc_service = age_cfg.get("keychain_service", "1p-exporter")
+    kc_service = age_cfg.get("keychain_service", "onep-exporter")
 
     def _log(msg: str) -> None:
         if verbose:
@@ -326,7 +326,7 @@ def sync_age_credentials_to_keychain(
     *,
     age_pass_item: Optional[str],
     age_pass_field: str = "passphrase",
-    age_keychain_service: str = "1p-exporter",
+    age_keychain_service: str = "onep-exporter",
     age_keychain_username: str = "backup",
     passphrase: Optional[str] = None,
 ) -> None:
@@ -453,9 +453,9 @@ def generate_age_keypair_and_store(
 
     # Also store in local keychain
     try:
-        store_passphrase_in_keychain(
-            "1p-exporter", "age_private_key", private_key
-        )
+            store_passphrase_in_keychain(
+                "onep-exporter", "age_private_key", private_key
+            )
     except Exception as e:
         print(f"warning: failed to store private key in keychain: {e}")
 

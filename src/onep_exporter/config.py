@@ -1,4 +1,4 @@
-"""Configuration persistence and interactive setup for 1p-exporter."""
+"""Configuration persistence and interactive setup for onep-exporter."""
 
 import json
 from pathlib import Path
@@ -10,7 +10,7 @@ from .utils import run_cmd, ensure_tool
 def _config_file_path() -> Path:
     """Return path to config file (respect ONEP_EXPORTER_CONFIG or XDG_CONFIG_HOME).
 
-    Uses ``~/.config/1p-exporter/config.json`` by default; legacy
+    Uses ``~/.config/onep-exporter/config.json`` by default; legacy
     ``onep-exporter`` path is still supported when loading.
     """
     import os
@@ -20,7 +20,7 @@ def _config_file_path() -> Path:
         return Path(cfg)
     xdg = os.environ.get("XDG_CONFIG_HOME")
     base = Path(xdg) if xdg else Path.home() / ".config"
-    return base / "1p-exporter" / "config.json"
+    return base / "onep-exporter" / "config.json"
 
 
 def save_config(data: dict) -> Path:
@@ -74,7 +74,7 @@ def init_setup(
     store_in_1password: Optional[str] = None,
     onepassword_vault: Optional[str] = None,
     store_in_keychain: bool = False,
-    keychain_service: str = "1p-exporter",
+    keychain_service: str = "onep-exporter",
     keychain_username: str = "backup",
     onepassword_field: str = "passphrase",
 ) -> str:
@@ -144,7 +144,7 @@ def configure_interactive() -> dict:
     from .keychain import store_passphrase_in_keychain
     from .utils import item_field_value
 
-    print("Interactive setup — configure defaults for 1p-exporter backups")
+    print("Interactive setup — configure defaults for onep-exporter backups")
     cfg = load_config()
 
     def prompt(prompt_text: str, default: Optional[str] = None) -> str:
@@ -173,7 +173,7 @@ def configure_interactive() -> dict:
     age_pass_source = None
     age_pass_item = None
     age_pass_field = "passphrase"
-    age_keychain_service = age_cfg.get("keychain_service", "1p-exporter")
+    age_keychain_service = age_cfg.get("keychain_service", "onep-exporter")
     age_keychain_username = age_cfg.get("keychain_username", "backup")
     age_recipients = age_cfg.get("recipients", "")
     age_use_yubikey = age_cfg.get("use_yubikey", False)
@@ -186,8 +186,8 @@ def configure_interactive() -> dict:
 
         # --- single 1Password item for all secrets ---
         default_title = age_cfg.get(
-            "pass_item"
-        ) or f"1p-exporter backup - {getpass.getuser()}"
+                "pass_item"
+            ) or f"onep-exporter backup - {getpass.getuser()}"
         op_item_title = prompt(
             "1Password item title for backup secrets", default_title
         )

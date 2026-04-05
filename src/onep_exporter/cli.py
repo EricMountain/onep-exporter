@@ -18,7 +18,7 @@ from .templates import item_to_md
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="1p-exporter", description="Export 1Password vaults and create backups")
+        prog="onep-exporter", description="Export 1Password vaults and create backups")
     sub = p.add_subparsers(dest="cmd")
 
     b = sub.add_parser(
@@ -77,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     i.add_argument("--store-in-keychain", action="store_true",
                    help=store_in_keychain_help)
     keychain_service_help = "keychain service name to store under" if sys.platform == "darwin" else argparse.SUPPRESS
-    i.add_argument("--keychain-service", default="1p-exporter",
+    i.add_argument("--keychain-service", default="onep-exporter",
                    help=keychain_service_help)
     keychain_user_help = "keychain account/username" if sys.platform == "darwin" else argparse.SUPPRESS
     i.add_argument("--keychain-username", default="backup",
@@ -101,7 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     kc = sub.add_parser(
         "keychain",
-        help="List and tighten macOS keychain entries used by 1p-exporter",
+        help="List and tighten macOS keychain entries used by onep-exporter",
     )
     kcsub = kc.add_subparsers(dest="keychain_cmd")
 
@@ -109,7 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
     kcl.add_argument(
         "--service",
         default=None,
-        help="keychain service name (default: configured service and 1p-exporter)",
+        help="keychain service name (default: configured service and onep-exporter)",
     )
     kcl.add_argument(
         "--account",
@@ -126,7 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
     kct.add_argument(
         "--service",
         default=None,
-        help="keychain service name (default: configured service and 1p-exporter)",
+        help="keychain service name (default: configured service and onep-exporter)",
     )
     kct.add_argument(
         "--account",
@@ -223,7 +223,7 @@ def main(argv=None):
         age_recipients = _opt("age_recipients", age_cfg.get("recipients"), "")
         age_use_yubikey = _opt("age_use_yubikey", age_cfg.get("use_yubikey"), False)
         sync_passphrase_from_1password = _opt("sync_passphrase_from_1password", None, False)
-        age_keychain_service = _opt("age_keychain_service", age_cfg.get("keychain_service"), "1p-exporter")
+        age_keychain_service = _opt("age_keychain_service", age_cfg.get("keychain_service"), "onep-exporter")
         age_keychain_username = _opt("age_keychain_username", age_cfg.get("keychain_username"), "backup")
         selected_vaults = _opt("vaults", None, None)
 

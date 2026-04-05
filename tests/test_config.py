@@ -20,7 +20,7 @@ def test_save_and_load_config(tmp_path, monkeypatch):
 def test_cli_uses_config_defaults(monkeypatch):
     # provide a config and ensure CLI merges values when flags not provided
     cfg = {"output_base": "/tmp/fromcfg", "encrypt": "age", "formats": ["json"], "download_attachments": True, "age": {
-        "pass_source": "prompt", "recipients": "", "keychain_service": "1p-exporter", "keychain_username": "backup"}}
+        "pass_source": "prompt", "recipients": "", "keychain_service": "onep-exporter", "keychain_username": "backup"}}
     monkeypatch.setattr(exporter_module, "load_config", lambda: cfg)
 
     called = {}
@@ -345,7 +345,7 @@ def test_default_private_key_title_includes_username(monkeypatch, tmp_path):
 
     cfg = exporter_module.configure_interactive()
 
-    expected = "1p-exporter backup - ci-user"
+    expected = "onep-exporter backup - ci-user"
     assert captured["title"] == expected
     assert public_recipient in cfg["age"]["recipients"]
 

@@ -1,4 +1,4 @@
-"""macOS keychain and cross-platform keyring helpers for 1p-exporter."""
+"""macOS keychain and cross-platform keyring helpers for onep-exporter."""
 
 import sys
 from typing import List, Optional
@@ -31,7 +31,7 @@ def _exporter_keychain_targets(
     service: Optional[str] = None,
     accounts: Optional[List[str]] = None,
 ) -> List[tuple[str, str]]:
-    """Return candidate (service, account) tuples used by 1p-exporter."""
+    """Return candidate (service, account) tuples used by onep-exporter."""
     cfg = cfg or {}
     age_cfg = cfg.get("age", {})
 
@@ -42,7 +42,7 @@ def _exporter_keychain_targets(
         configured = age_cfg.get("keychain_service")
         if configured:
             services.append(configured)
-        services.append("1p-exporter")
+        services.append("onep-exporter")
 
     account_values = []
     if accounts:
@@ -63,7 +63,7 @@ def list_exporter_keychain_entries(
     service: Optional[str] = None,
     accounts: Optional[List[str]] = None,
 ) -> List[dict]:
-    """List existing keychain entries that 1p-exporter may use."""
+    """List existing keychain entries that onep-exporter may use."""
     if sys.platform != "darwin":
         raise RuntimeError("keychain entry listing is supported on macOS only")
 
@@ -202,12 +202,12 @@ def sync_keychain() -> bool:
     if not item_ref:
         print(
             "error: age.pass_item is not set in config; "
-            "run `1p-exporter init` first",
+            "run `onep-exporter init` first",
             file=sys.stderr,
         )
         return False
 
-    kc_service = age_cfg.get("keychain_service", "1p-exporter")
+    kc_service = age_cfg.get("keychain_service", "onep-exporter")
     kc_username = age_cfg.get("keychain_username", "backup")
     pass_field = age_cfg.get("pass_field", "passphrase")
 

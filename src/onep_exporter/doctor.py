@@ -1,7 +1,8 @@
-"""Environment and configuration diagnostics for 1p-exporter."""
+"""Environment and configuration diagnostics for onep-exporter."""
 
 import os
 import sys
+from typing import Optional
 
 from .config import load_config, _config_file_path
 from .utils import ensure_tool
@@ -42,7 +43,7 @@ def doctor() -> bool:
 
     # header
     print()
-    title = f"{HEADER_ICON}  1p-exporter doctor — environment & configuration checks"
+    title = f"{HEADER_ICON}  onep-exporter doctor — environment & configuration checks"
     print(_color(title, "1;36"))
     print(_color("─" * 52, "36"))
 
@@ -57,7 +58,7 @@ def doctor() -> bool:
     # Tools availability (informational)
     print(_color("\nTools:", "1;34"))
 
-    def _suggest_install_cmd(tool: str) -> str | None:
+    def _suggest_install_cmd(tool: str) -> Optional[str]:
         pkg_map = {
             "age": "age",
             "age-keygen": "age",

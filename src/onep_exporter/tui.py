@@ -474,7 +474,7 @@ def _build_item_widgets(item: dict) -> List:
 class BrowseApp(App):
     """TUI for searching and viewing exported 1Password items."""
 
-    TITLE = "1p-exporter · Browse Archive"
+    TITLE = "onep-exporter · Browse Archive"
 
     # ListItem:even has a perf impact. Might remove this if it's too bad.
     CSS = """

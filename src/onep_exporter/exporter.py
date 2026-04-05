@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Union
 
@@ -357,7 +357,7 @@ def _make_progress(quiet: bool) -> Progress:
     )
 
 
-def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "md"), encrypt: str = "none", download_attachments: bool = True, quiet: bool = False, age_pass_source: str = "prompt", age_pass_item: Optional[str] = None, age_pass_field: str = "passphrase", age_recipients: str = "", age_use_yubikey: bool = False, sync_passphrase_from_1password: bool = False, age_keychain_service: str = "1p-exporter", age_keychain_username: str = "backup", selected_vaults: Optional[list[str]] = None, fail_on_error: bool = False) -> Path:
+def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "md"), encrypt: str = "none", download_attachments: bool = True, quiet: bool = False, age_pass_source: str = "prompt", age_pass_item: Optional[str] = None, age_pass_field: str = "passphrase", age_recipients: str = "", age_use_yubikey: bool = False, sync_passphrase_from_1password: bool = False, age_keychain_service: str = "onep-exporter", age_keychain_username: str = "backup", selected_vaults: Optional[list[str]] = None, fail_on_error: bool = False) -> Path:
     output_base = Path(output_base)
     # create output directory right away; the encrypted archive is written to
     # this location even when we stream through age/gpg, so the parent must
@@ -365,7 +365,7 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
     output_base.mkdir(parents=True, exist_ok=True)
 
     console = Console(quiet=quiet)
-    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
     # when encrypting we don't want persistent plaintext files left behind,
     # so create a temporary work directory that will be removed after the
@@ -574,7 +574,7 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
         meta = {
             "title": "__ 1p-backup - archive metadata __",
             "timestamp": ts,
-            "generated_at": datetime.now(UTC).isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "op_account": account_info,
             "vaults": [
                 {
@@ -598,7 +598,7 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
         manifest["files"].append({"path": meta_path, "sha256": meta_sha})
 
         # also include a short markdown summary for convenience
-        md_lines = [f"# 1p-exporter archive metadata\n", f"- Archive generated: {meta['generated_at']}\n", f"- Backup timestamp: {meta['timestamp']}\n", f"- Total vaults: {len(meta['vaults'])}\n", f"- Total items: {meta['total_items']}\n", f"- Total attachments: {meta['total_attachments']}\n", f"- Total errors: {meta['total_errors']}\n", "\n", "## Vaults\n"]
+        md_lines = [f"# onep-exporter archive metadata\n", f"- Archive generated: {meta['generated_at']}\n", f"- Backup timestamp: {meta['timestamp']}\n", f"- Total vaults: {len(meta['vaults'])}\n", f"- Total items: {meta['total_items']}\n", f"- Total attachments: {meta['total_attachments']}\n", f"- Total errors: {meta['total_errors']}\n", "\n", "## Vaults\n"]
         for v in meta["vaults"]:
             md_lines.append(f"- {v['name']} ({v['id']}): {v['items']} items, {v['errors']} errors\n")
         if meta.get("op_account"):
