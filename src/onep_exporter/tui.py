@@ -508,10 +508,16 @@ def _build_item_widgets(item: dict) -> List:
             href = url.get("href") or url.get("url") or ""
             label = url.get("label", "")
             if href:
+                # Render the href as a clickable link to itself. If a label
+                # is provided show the styled label then the linked href.
                 if label:
-                    pending.append(Text("- ") + Text.from_markup(_style_label(label) + " ") + Text(href))
+                    pending.append(
+                        Text("- ")
+                        + Text.from_markup(_style_label(label) + " ")
+                        + Text(href, style=f"link {href}")
+                    )
                 else:
-                    pending.append(Text("- ") + Text(href))
+                    pending.append(Text("- ") + Text(href, style=f"link {href}"))
 
         pending.append(Text(""))
 
