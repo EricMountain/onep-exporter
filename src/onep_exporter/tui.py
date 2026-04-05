@@ -659,7 +659,11 @@ class BrowseApp(App):
             for cat, count in sorted(categories.items(), key=lambda x: -x[1]):
                 combined.append("\n")
                 combined.append(Text("- "))
-                combined.append(Text(str(cat)))
+                key = (cat or "").upper()
+                icon = _CATEGORY_ICONS.get(key, "\U0001f4e6")
+                # make human-friendly: replace underscores and titlecase
+                nice = str(cat).replace("_", " ").title()
+                combined.append(Text(f"{icon} {nice}"))
                 combined.append(Text(": "))
                 combined.append(Text(str(count)))
         if total == 0:
