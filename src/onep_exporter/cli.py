@@ -11,7 +11,7 @@ from .keychain import (
     tighten_keychain_entry_access,
 )
 from .query import query_list_titles, query_get_item
-from .tui import run_tui
+from .tui import run_tui, _find_latest_archive
 from .utils import verify_manifest, item_field_value
 from .templates import item_to_md
 
@@ -147,8 +147,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     ql = qsub.add_parser("list", help="List item titles matching a regexp")
     ql.add_argument("pattern", help="regular expression to match item titles")
-    ql.add_argument("--dir", "-d", default=".",
-                    help="path to directory containing exported JSON (default: current directory)")
+    ql.add_argument("--dir", "-d", default=None,
+                    help="path to directory containing exported JSON (default: most recent backup archive)")
     ql.add_argument("--age-identity", action="append", dest="age_identities",
                     help="path to an age identity file to use for decrypting archives; can be repeated."
                     )
@@ -157,8 +157,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     qg = qsub.add_parser("get", help="Retrieve the full contents of a single item")
     qg.add_argument("item", help="item title (exact, case-sensitive) or item id to retrieve")
-    qg.add_argument("--dir", "-d", default=".",
-                    help="path to directory containing exported JSON (default: current directory)")
+    qg.add_argument("--dir", "-d", default=None,
+                    help="path to directory containing exported JSON (default: most recent backup archive)")
     qg.add_argument("--format", choices=["json", "md"], default="md",
                     dest="output_format",
                     help="output format: md/markdown (default) or json")
@@ -343,10 +343,24 @@ def main(argv=None):
             parser.print_help()
             sys.exit(2)
     elif args.cmd == "query":
+        # Resolve directory: if not provided, default to most recent backup
+        cfg = load_config()
+
+        def _resolved_dir(arg_dir):
+            if arg_dir is not None:
+                return arg_dir
+            backup_base = cfg.get("backup_directory") or cfg.get("output_base") or "backups"
+            try:
+                return _find_latest_archive(backup_base)
+            except FileNotFoundError as e:
+                print(f"error: {e}")
+                sys.exit(1)
+
         if args.query_cmd == "list":
             _setup_query_env(args)
             try:
-                matches = query_list_titles(args.dir, args.pattern)
+                resolved = _resolved_dir(getattr(args, "dir", None))
+                matches = query_list_titles(resolved, args.pattern)
             except Exception as e:
                 print(f"error: {e}")
                 sys.exit(1)
@@ -356,7 +370,8 @@ def main(argv=None):
         elif args.query_cmd == "get":
             _setup_query_env(args)
             try:
-                item = query_get_item(args.dir, args.item)
+                resolved = _resolved_dir(getattr(args, "dir", None))
+                item = query_get_item(resolved, args.item)
             except (KeyError, ValueError) as e:
                 print(f"error: {e}")
                 sys.exit(1)
