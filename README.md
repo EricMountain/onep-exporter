@@ -28,9 +28,11 @@ Note: the Python import package name remains `onep_exporter` (use `import onep_e
 1. Install pipx (only once):
 
      ```shell
-     python3 -m pip install --user pipx
-     # or use OS package manager, e.g:
+     # Install pipx using OS package manager, e.g:
      brew install pipx
+
+     # or
+     python3 -m pip install --user pipx
      ```
 
 2. Install 1p-exporter (not published on PyPI)
@@ -40,7 +42,7 @@ Note: the Python import package name remains `onep_exporter` (use `import onep_e
    - Install via `pipx` from GitHub (recommended):
 
      ```shell
-     pipx install git+https://github.com/<owner>/<repo>.git
+     pipx install git+https://github.com/EricMountain/onep-exporter.git
      ```
 
    - Or install from local source if checked out (development):
