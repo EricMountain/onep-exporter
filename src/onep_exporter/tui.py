@@ -413,15 +413,26 @@ def _get_totp_period(value: str) -> int:
 def _md_to_rich(s: str) -> str:
     """Convert a tiny subset of Markdown to Rich markup for Textual.
 
-    - Leading `# ` -> bold heading
+    - Leading `# ` -> bold heading (white)
+    - Leading `## ` -> bold heading (cyan)
+    - Leading `### ` (and deeper) -> bold heading (blue)
     - `**bold**` -> [bold]...[/bold]
     - `_italic_` -> [italic]...[/italic]
     - Inline code using backticks -> [bold]...[/bold]
     """
     # Escape literal square brackets to avoid accidental Rich markup
     s = s.replace("[", "\\[")
-    if s.startswith("# "):
-        return f"[bold]{s[2:]}[/bold]"
+    # Headings — match all levels and colour by depth
+    m = re.match(r"^(#{1,6}) (.*)", s)
+    if m:
+        level = len(m.group(1))
+        text = m.group(2)
+        if level == 1:
+            return f"[bold]{text}[/bold]"
+        elif level == 2:
+            return f"[bold cyan]{text}[/bold cyan]"
+        else:
+            return f"[bold blue]{text}[/bold blue]"
     # Only treat **bold** when markers are not inside a word
     s = re.sub(r"(?<!\w)\*\*(.+?)\*\*(?!\w)", r"[bold]\1[/bold]", s)
     # only treat underscores as italics when they're not inside words
