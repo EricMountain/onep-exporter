@@ -328,7 +328,7 @@ def _make_progress(quiet: bool) -> Progress:
     )
 
 
-def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "md"), encrypt: str = "none", download_attachments: bool = True, quiet: bool = False, age_pass_source: str = "prompt", age_pass_item: Optional[str] = None, age_pass_field: str = "passphrase", age_recipients: str = "", age_use_yubikey: bool = False, sync_passphrase_from_1password: bool = False, age_keychain_service: str = "1p-exporter", age_keychain_username: str = "backup", fail_on_error: bool = False) -> Path:
+def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "md"), encrypt: str = "none", download_attachments: bool = True, quiet: bool = False, age_pass_source: str = "prompt", age_pass_item: Optional[str] = None, age_pass_field: str = "passphrase", age_recipients: str = "", age_use_yubikey: bool = False, sync_passphrase_from_1password: bool = False, age_keychain_service: str = "1p-exporter", age_keychain_username: str = "backup", selected_vaults: Optional[list[str]] = None, fail_on_error: bool = False) -> Path:
     output_base = Path(output_base)
     # create output directory right away; the encrypted archive is written to
     # this location even when we stream through age/gpg, so the parent must
@@ -384,6 +384,27 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
         )
 
     vaults = exporter.list_vaults()
+    # If the caller requested a subset of vaults, filter by id or name.
+    if selected_vaults:
+        requested = selected_vaults
+        def _matches(s: str, v: dict) -> bool:
+            if not s:
+                return False
+            if s == v.get("id"):
+                return True
+            name = v.get("name") or ""
+            if s.lower() == name.lower():
+                return True
+            return False
+
+        filtered = [v for v in vaults if any(_matches(s, v) for s in requested)]
+        # warn about any requested vaults that were not found
+        not_found = [s for s in requested if not any(_matches(s, v) for v in vaults)]
+        for nf in not_found:
+            # collect as a warning so it's shown later
+            # use the same warnings list used during processing
+            warnings.append(f"requested vault not found: {nf}")
+        vaults = filtered
     manifest = {
         "timestamp": ts,
         "vaults": [],
@@ -489,7 +510,9 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
             manifest["vaults"].append({
                 "id": vault_id,
                 "name": vault_name,
+                "expected": len(items_summary),
                 "items": len(items_full),
+                "missing": max(0, len(items_summary) - len(items_full)),
                 "file": f"vault-{vault_id}.json",
                 "sha256": vault_sha,
                 "errors": vault_errors,
@@ -505,9 +528,160 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
 
             progress.advance(vault_task)
 
+    # produce an archive metadata item (secure note) describing this run
+    try:
+        # best-effort: try to collect 1Password account info
+        account_info = None
+        try:
+            rc, out, err = exporter._op(["op", "account", "get", "--format=json"], capture_output=True, check=False)
+            if rc == 0 and out:
+                try:
+                    account_info = json.loads(out)
+                except Exception:
+                    account_info = {"raw": out}
+        except Exception:
+            account_info = None
+
+        meta = {
+            "title": "__ 1p-backup - archive metadata __",
+            "timestamp": ts,
+            "generated_at": datetime.now(UTC).isoformat(),
+            "op_account": account_info,
+            "vaults": [
+                {
+                    "id": v.get("id"),
+                    "name": v.get("name"),
+                    "items": v.get("items"),
+                    "errors": v.get("errors", 0),
+                }
+                for v in manifest.get("vaults", [])
+            ],
+            "total_items": total_items,
+            "total_attachments": total_attachments,
+            "total_errors": total_errors,
+            "warnings": warnings,
+        }
+
+        meta_json = json.dumps(meta, indent=2, ensure_ascii=False).encode("utf-8")
+        meta_sha = hashlib.sha256(meta_json).hexdigest()
+        meta_path = "metadata.json"
+        memory_files.append((meta_path, meta_json))
+        manifest["files"].append({"path": meta_path, "sha256": meta_sha})
+
+        # also include a short markdown summary for convenience
+        md_lines = [f"# 1p-exporter archive metadata\n", f"- Archive generated: {meta['generated_at']}\n", f"- Backup timestamp: {meta['timestamp']}\n", f"- Total vaults: {len(meta['vaults'])}\n", f"- Total items: {meta['total_items']}\n", f"- Total attachments: {meta['total_attachments']}\n", f"- Total errors: {meta['total_errors']}\n", "\n", "## Vaults\n"]
+        for v in meta["vaults"]:
+            md_lines.append(f"- {v['name']} ({v['id']}): {v['items']} items, {v['errors']} errors\n")
+        if meta.get("op_account"):
+            md_lines.append("\n## 1Password account info\n")
+            try:
+                if isinstance(meta["op_account"], dict):
+                    for k, val in meta["op_account"].items():
+                        md_lines.append(f"- {k}: {val}\n")
+                else:
+                    md_lines.append(f"- {meta['op_account']}\n")
+            except Exception:
+                pass
+
+        md_text = "".join(md_lines).encode("utf-8")
+        md_sha = hashlib.sha256(md_text).hexdigest()
+        md_name = "metadata.md"
+        memory_files.append((md_name, md_text))
+        manifest["files"].append({"path": md_name, "sha256": md_sha})
+    except Exception:
+        # metadata is best-effort; don't fail the backup if we can't produce it
+        pass
+
     # print any warnings that were collected during export
     for w in warnings:
         console.print(f"  [yellow]warning:[/yellow] {w}")
+
+    # build a human-readable metadata summary and include it in the archive
+    try:
+        account_info = None
+        # best-effort account summary without invoking the `op` CLI (avoids
+        # requiring the 1Password app during test runs or on CI).  If a
+        # session env var is present record the account keys; otherwise note
+        # presence of service/connect tokens.
+        env = os.environ
+        session_accounts = [k.split("OP_SESSION_", 1)[1] for k in env.keys() if k.startswith("OP_SESSION_")]
+        account_info = {
+            "session_accounts": session_accounts,
+            "service_account_token": bool(env.get("OP_SERVICE_ACCOUNT_TOKEN")),
+            "connect_token": bool(env.get("OP_CONNECT_TOKEN")),
+        }
+
+        meta = {
+            "title": "__ 1p-backup - archive metadata __",
+            "timestamp": ts,
+            "account": account_info,
+            "vaults": manifest.get("vaults", []),
+            "totals": {
+                "items": total_items,
+                "attachments": total_attachments,
+                "errors": total_errors,
+            },
+        }
+
+        meta_json = json.dumps(meta, indent=2, ensure_ascii=False).encode("utf-8")
+        meta_name = f"__ 1p-backup - archive metadata {ts} __.json"
+        meta_sha = hashlib.sha256(meta_json).hexdigest()
+        memory_files.append((meta_name, meta_json))
+        manifest["files"].append({"path": meta_name, "sha256": meta_sha})
+
+        # also include a small markdown summary for quick inspection
+        lines = [f"# 1p-backup metadata", f"\n- timestamp: {ts}"]
+        if account_info:
+            try:
+                # try to present a concise account summary
+                if isinstance(account_info, list) and account_info:
+                    acct = account_info[0]
+                    lines.append(f"- account: {acct.get('email') or acct.get('name') or acct.get('id')}")
+                else:
+                    lines.append(f"- account: {account_info}")
+            except Exception:
+                lines.append("- account: <redacted>")
+        lines.append("\n## Vaults")
+        for v in manifest.get("vaults", []):
+            lines.append(f"- {v.get('name') or v.get('id')} (id={v.get('id')}) — expected={v.get('expected')} items={v.get('items')} missing={v.get('missing')} errors={v.get('errors')}")
+        lines.append("\n## Totals")
+        lines.append(f"- items: {total_items}")
+        lines.append(f"- attachments: {total_attachments}")
+        lines.append(f"- errors: {total_errors}")
+
+        md_text = "\n".join(lines)
+        md_bytes = md_text.encode("utf-8")
+        md_name = f"__ 1p-backup - archive metadata {ts} __.md"
+        md_sha = hashlib.sha256(md_bytes).hexdigest()
+        memory_files.append((md_name, md_bytes))
+        manifest["files"].append({"path": md_name, "sha256": md_sha})
+        # Also expose the metadata as a synthetic vault JSON so it appears
+        # in archive browsing/search.  This mirrors the structure of
+        # exported vault JSON lists (a list of item dicts).
+        meta_item = {
+            "id": "__backup_metadata__",
+            "title": "__ 1p-backup - archive metadata __",
+            "vault": {"id": "__backup_metadata__", "name": "__ 1p-backup metadata __"},
+            "fields": [{"label": "summary", "value": md_text}],
+            "notes": json.dumps({"meta": meta}),
+        }
+        vault_meta_name = "vault-__backup_metadata__.json"
+        vault_meta_bytes = json.dumps([meta_item], indent=2, ensure_ascii=False).encode("utf-8")
+        vault_meta_sha = hashlib.sha256(vault_meta_bytes).hexdigest()
+        memory_files.append((vault_meta_name, vault_meta_bytes))
+        manifest["files"].append({"path": vault_meta_name, "sha256": vault_meta_sha})
+        manifest["vaults"].append({
+            "id": "__backup_metadata__",
+            "name": "__ 1p-backup metadata __",
+            "items": 1,
+            "file": vault_meta_name,
+            "sha256": vault_meta_sha,
+            "errors": 0,
+        })
+        total_items += 1
+    except Exception:
+        # metadata creation is best-effort; do not fail the backup for it
+        pass
 
     # write manifest
     manifest_path = outdir / "manifest.json"

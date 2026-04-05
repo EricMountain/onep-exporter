@@ -58,6 +58,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="treat the passphrase stored in 1Password as authoritative and copy it to other configured stores (keychain/ENV) before encrypting")
     b.add_argument("--no-attachments", action="store_true", default=argparse.SUPPRESS,
                    help="do not attempt to download attachments (overrides saved config)")
+    b.add_argument("--vault", action="append", dest="vaults",
+                   help="vault id or name to include in the backup (repeatable). By default all vaults are backed up.")
     b.add_argument("--quiet", action="store_true", default=argparse.SUPPRESS,
                    help="minimal output (overrides saved config)")
 
@@ -223,6 +225,7 @@ def main(argv=None):
         sync_passphrase_from_1password = _opt("sync_passphrase_from_1password", None, False)
         age_keychain_service = _opt("age_keychain_service", age_cfg.get("keychain_service"), "1p-exporter")
         age_keychain_username = _opt("age_keychain_username", age_cfg.get("keychain_username"), "backup")
+        selected_vaults = _opt("vaults", None, None)
 
         try:
             run_backup(
@@ -231,6 +234,7 @@ def main(argv=None):
             encrypt=encrypt,
             download_attachments=download_attachments,
             quiet=quiet,
+            selected_vaults=selected_vaults,
             age_pass_source=age_pass_source,
             age_pass_item=age_pass_item,
             age_pass_field=age_pass_field,
