@@ -224,7 +224,8 @@ def main(argv=None):
         age_keychain_service = _opt("age_keychain_service", age_cfg.get("keychain_service"), "1p-exporter")
         age_keychain_username = _opt("age_keychain_username", age_cfg.get("keychain_username"), "backup")
 
-        run_backup(
+        try:
+            run_backup(
             output_base=output_base,
             formats=formats,
             encrypt=encrypt,
@@ -238,7 +239,11 @@ def main(argv=None):
             sync_passphrase_from_1password=sync_passphrase_from_1password,
             age_keychain_service=age_keychain_service,
             age_keychain_username=age_keychain_username,
+            fail_on_error=True,
         )
+        except Exception as e:
+            print(f"error: {e}")
+            sys.exit(1)
     elif args.cmd == "init":
         # Interactive flow when no explicit options are provided
         any_flags = any((args.generate, args.passphrase,

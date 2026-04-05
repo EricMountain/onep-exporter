@@ -75,24 +75,46 @@ class OpExporter:
             raise RuntimeError(
                 "`op` (1Password CLI) not found in PATH — please install and sign in first")
 
+    def _op(self, cmd: list[str], **kwargs):
+        """Run an `op` command and provide clearer guidance on auth errors.
+
+        Returns the same tuple as `run_cmd`.
+        Raises RuntimeError with actionable advice when the 1Password CLI
+        indicates an interactive prompt or session/auth issue.
+        """
+        try:
+            return run_cmd(cmd, **kwargs)
+        except CommandError as e:
+            stderr = getattr(e, "stderr", "") or ""
+            # common op client initialization error when no session token is set
+            if "promptError" in stderr or "error initializing client" in stderr:
+                raise RuntimeError(
+                    "1Password CLI (op) reported a client initialization error. "
+                    "This usually means no active session token is available or op needs interactive sign-in. "
+                    "Try running `op signin --raw` and setting the OP_SESSION_<account> environment variable, "
+                    "or sign in with the 1Password app (Touch ID may be required). "
+                    f"Original error: {e}")
+            # otherwise re-raise a generic runtime error including the command output
+            raise RuntimeError(f"op command failed: {e}")
+
     def list_vaults(self) -> List[dict]:
-        _, out, _ = run_cmd(["op", "vault", "list", "--format=json"])
+        _, out, _ = self._op(["op", "vault", "list", "--format=json"])
         return json.loads(out)
 
     def list_items(self, vault_id: str) -> List[dict]:
-        _, out, _ = run_cmd(
+        _, out, _ = self._op(
             ["op", "item", "list", "--vault", vault_id, "--format=json"])
         return json.loads(out)
 
     def get_item(self, item_id: str) -> dict:
-        _, out, _ = run_cmd(["op", "item", "get", item_id, "--format=json"])
+        _, out, _ = self._op(["op", "item", "get", item_id, "--format=json"])
         return json.loads(out)
 
     def download_document(self, doc_id: str, dest: Path) -> None:
         # Try `op document get <id> --output <file>` (works for document/file objects)
         try:
-            run_cmd(["op", "document", "get", doc_id, "--output", str(dest)])
-        except CommandError as e:
+            self._op(["op", "document", "get", doc_id, "--output", str(dest)])
+        except RuntimeError as e:
             raise RuntimeError(f"failed to download document {doc_id}: {e}")
 
     def download_document_bytes(self, doc_id: str) -> bytes:
@@ -103,8 +125,8 @@ class OpExporter:
         --output flag and capture stdout.
         """
         try:
-            rc, out, err = run_cmd(["op", "document", "get", doc_id], capture_output=True)
-        except CommandError as e:
+            rc, out, err = self._op(["op", "document", "get", doc_id], capture_output=True)
+        except RuntimeError as e:
             raise RuntimeError(f"failed to download document {doc_id}: {e}")
         return out.encode("utf-8") if isinstance(out, str) else out
 
@@ -306,7 +328,7 @@ def _make_progress(quiet: bool) -> Progress:
     )
 
 
-def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "md"), encrypt: str = "none", download_attachments: bool = True, quiet: bool = False, age_pass_source: str = "prompt", age_pass_item: Optional[str] = None, age_pass_field: str = "passphrase", age_recipients: str = "", age_use_yubikey: bool = False, sync_passphrase_from_1password: bool = False, age_keychain_service: str = "1p-exporter", age_keychain_username: str = "backup") -> Path:
+def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "md"), encrypt: str = "none", download_attachments: bool = True, quiet: bool = False, age_pass_source: str = "prompt", age_pass_item: Optional[str] = None, age_pass_field: str = "passphrase", age_recipients: str = "", age_use_yubikey: bool = False, sync_passphrase_from_1password: bool = False, age_keychain_service: str = "1p-exporter", age_keychain_username: str = "backup", fail_on_error: bool = False) -> Path:
     output_base = Path(output_base)
     # create output directory right away; the encrypted archive is written to
     # this location even when we stream through age/gpg, so the parent must
@@ -380,6 +402,7 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
     total_items = 0
     total_attachments = 0
     warnings: list[str] = []
+    total_errors = 0
 
     progress = _make_progress(quiet)
     with progress:
@@ -392,9 +415,14 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
                 progress.advance(vault_task)
                 continue
             vault_name = v.get("name") or vault_id
-            progress.update(vault_task, description=f"Vault: [cyan]{vault_name}[/cyan]")
+            progress.update(vault_task, description=f"Vaults:")
 
             items_summary = exporter.list_items(vault_id)
+            # per-vault error counter
+            vault_errors = 0
+
+            def _err_text(n: int) -> str:
+                return f"{n} error" if n == 1 else f"{n} errors"
             item_task = progress.add_task(
                 f"  {vault_name}", total=len(items_summary),
             )
@@ -409,6 +437,10 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
                     item = exporter.get_item(item_id)
                 except Exception as e:
                     warnings.append(f"failed to fetch item {item_id}: {e}")
+                    vault_errors += 1
+                    total_errors += 1
+                    # update this vault's progress line to show error count
+                    progress.update(item_task, description=f"  {vault_name} ([red]{_err_text(vault_errors)}[/red])")
                     progress.advance(item_task)
                     continue
                 # download attachments if present
@@ -423,6 +455,9 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
                                 exporter.download_document(fid, dest)
                             except Exception as e:
                                 warnings.append(f"could not download attachment {name}: {e}")
+                                vault_errors += 1
+                                total_errors += 1
+                                progress.update(item_task, description=f"  {vault_name} ([red]{_err_text(vault_errors)}[/red])")
                             else:
                                 manifest["files"].append(
                                     {"path": str(dest.relative_to(outdir)), "sha256": sha256_file(dest)})
@@ -433,6 +468,10 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
                                 data = exporter.download_document_bytes(fid)
                             except Exception as e:
                                 warnings.append(f"could not download attachment {name}: {e}")
+                                vault_errors += 1
+                                total_errors += 1
+                                # reflect error on this vault's progress line
+                                progress.update(item_task, description=f"  {vault_name} ([red]{_err_text(vault_errors)}[/red])")
                                 continue
                             sha = hashlib.sha256(data).hexdigest()
                             relpath = f"attachments/{fid}-{name}"
@@ -453,6 +492,7 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
                 "items": len(items_full),
                 "file": f"vault-{vault_id}.json",
                 "sha256": vault_sha,
+                "errors": vault_errors,
             })
 
             if "md" in formats:
@@ -489,7 +529,9 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
                 ti.size = len(data)
                 tar.addfile(ti, io.BytesIO(data))
         archive_sha = sha256_file(archive_path)
-        _print_summary(console, archive_path, archive_sha, encrypt, len(vaults), total_items, total_attachments)
+        _print_summary(console, archive_path, archive_sha, encrypt, len(vaults), total_items, total_attachments, total_errors)
+        if total_errors and fail_on_error:
+            raise RuntimeError(f"backup completed with {total_errors} errors")
         return archive_path
 
     # At this point we know encryption is requested.
@@ -539,7 +581,9 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
             shutil.rmtree(outdir)
         except Exception:
             pass
-    _print_summary(console, Path(out_enc), archive_sha, encrypt, len(vaults), total_items, total_attachments)
+    _print_summary(console, Path(out_enc), archive_sha, encrypt, len(vaults), total_items, total_attachments, total_errors)
+    if total_errors and fail_on_error:
+        raise RuntimeError(f"backup completed with {total_errors} errors")
     return Path(out_enc)
 
 
@@ -551,6 +595,7 @@ def _print_summary(
     vault_count: int,
     item_count: int,
     attachment_count: int,
+    errors: int = 0,
 ) -> None:
     """Print a rich summary panel after backup completes."""
     table = Table.grid(padding=(0, 2))
@@ -564,6 +609,11 @@ def _print_summary(
     table.add_row("Items", str(item_count))
     if attachment_count:
         table.add_row("Attachments", str(attachment_count))
+    if errors:
+        table.add_row("Errors", str(errors))
     console.print()
-    console.print(Panel(table, title="[bold green]Backup complete[/bold green]", border_style="green"))
+    if errors:
+        console.print(Panel(table, title="[bold red]Backup incomplete[/bold red]", border_style="red"))
+    else:
+        console.print(Panel(table, title="[bold green]Backup complete[/bold green]", border_style="green"))
 
