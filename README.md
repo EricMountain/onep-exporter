@@ -1,4 +1,4 @@
-# 1p-exporter — 1Password vault exporter and secure local backup
+# onep-exporter — 1Password vault exporter and secure local backup
 
 ## Overview
 
