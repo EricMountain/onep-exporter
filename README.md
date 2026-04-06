@@ -50,6 +50,14 @@ Note: the Python import package name remains `onep_exporter` (use `import onep_e
    onep-exporter init
    ```
 
+- By default, MacOS' `security` app gets access to onep-exporter's secrets stored in the keychain. So an unlocked laptop gives direct access to 1Password exports.
+  - Open the MacOS `keychain` app (_not_ the Passwords app)
+  - In the `login` keychain, open the `onep-exporter` entry (or whatever `onep_exporter keychain list` reports for `keychain_service`)
+  - Open the Access Control tab
+    - Remove "security" from the list of authorised apps
+    - Select "Confirm before allowing access"
+    - Save changes
+
 - Create a backup
 
    ```shell
