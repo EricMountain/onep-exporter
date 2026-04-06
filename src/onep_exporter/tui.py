@@ -528,7 +528,18 @@ def _build_item_widgets(item: dict) -> List:
         if purpose:
             name = purpose.lower()
         else:
-            name = f.get("label") or f.get("name") or f.get("type") or "field"
+            label = f.get("label")
+            fname = f.get("name")
+            ftype = f.get("type")
+            if label:
+                name = label
+            elif fname:
+                name = fname
+            elif ftype:
+                # Use a human-friendly title-case form for the `type` fallback
+                name = str(ftype).replace("_", " ").title()
+            else:
+                name = "field"
         value = f.get("value")
         if not value:
             continue
