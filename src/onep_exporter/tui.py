@@ -183,6 +183,30 @@ class ItemList(OptionList):
             )
         return strip
 
+    def on_focus(self, event=None) -> None:
+        """When the list receives focus, ensure an item is highlighted.
+
+        If no item is currently highlighted and the list has options, move
+        the cursor down (which will highlight the first item) or fall back
+        to setting the highlighted index directly.
+        """
+        if not getattr(self, "options", None):
+            return
+        highlighted = getattr(self, "highlighted", None)
+        if highlighted is None or (isinstance(highlighted, int) and highlighted < 0):
+            # Prefer the built-in cursor action which will properly update
+            # internal state; fall back to setting the index directly.
+            if hasattr(self, "action_cursor_down"):
+                try:
+                    self.action_cursor_down()
+                    return
+                except Exception:
+                    pass
+            try:
+                self.highlighted = 0
+            except Exception:
+                pass
+
 
 class SecretLabel(Static):
     """Shows ••••••••; reveals on hover, copies to clipboard on click."""
