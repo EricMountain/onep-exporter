@@ -1,7 +1,6 @@
 """Core 1Password exporter: OpExporter class and run_backup orchestrator."""
 
 import atexit
-import getpass
 import hashlib
 import io
 import json
@@ -360,7 +359,7 @@ def _make_progress(quiet: bool) -> Progress:
 def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "md"), encrypt: str = "none", download_attachments: bool = True, quiet: bool = False, age_pass_source: str = "prompt", age_pass_item: Optional[str] = None, age_pass_field: str = "passphrase", age_recipients: str = "", age_use_yubikey: bool = False, sync_passphrase_from_1password: bool = False, age_keychain_service: str = "onep-exporter", age_keychain_username: str = "backup", selected_vaults: Optional[list[str]] = None, fail_on_error: bool = False) -> Path:
     output_base = Path(output_base)
     # create output directory right away; the encrypted archive is written to
-    # this location even when we stream through age/gpg, so the parent must
+    # this location even when we stream through age, so the parent must
     # exist or the subprocess will fail with "no such file or directory".
     output_base.mkdir(parents=True, exist_ok=True)
 
@@ -715,19 +714,7 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
         return archive_path
 
     # At this point we know encryption is requested.
-    if encrypt == "gpg":
-        if not ensure_tool("gpg"):
-            raise RuntimeError("gpg not found for encryption")
-
-        passphrase = os.environ.get("BACKUP_PASSPHRASE")
-        if not passphrase:
-            passphrase = getpass.getpass(
-                "GPG passphrase for symmetric encryption: ")
-        out_enc = str(archive_path) + ".gpg"
-        cmd = ["gpg", "--symmetric", "--cipher-algo", "AES256", "--batch",
-               "--pinentry-mode", "loopback", "--passphrase", passphrase,
-               "--output", out_enc]
-    elif encrypt == "age":
+    if encrypt == "age":
         if not ensure_tool("age"):
             raise RuntimeError("age not found for encryption")
         out_enc = str(archive_path) + ".age"

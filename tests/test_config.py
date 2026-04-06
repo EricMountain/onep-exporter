@@ -72,10 +72,10 @@ def test_cli_flag_overrides_config(monkeypatch):
     monkeypatch.setattr(cli, "run_backup", fake_run_backup)
 
     cli.main(["backup", "--output", "/tmp/explicit",
-             "--formats", "json,md", "--encrypt", "gpg"])
+             "--formats", "json,md", "--encrypt", "none"])
 
     assert called["output_base"] == "/tmp/explicit"
-    assert called["encrypt"] == "gpg"
+    assert called["encrypt"] == "none"
     assert called["formats"] == ["json", "md"]
 
 

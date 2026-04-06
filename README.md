@@ -11,7 +11,7 @@ Note: the Python import package name remains `onep_exporter` (use `import onep_e
 - Export vaults/items using the `op` CLI (requires sign‑in or `OP_SESSION_*`)
 - Per‑vault `JSON` and `Markdown` exports
 - Attachment download (best‑effort) and `manifest.json` with SHA256 checksums
-- Optional client‑side encryption with `age` (recommended) or symmetric `gpg`
+- Optional client‑side encryption with `age` (recommended)
 - Interactive `init` flow and persistent configuration (`~/.config/1p-exporter/config.json`)
 - Helpers to store/retrieve passphrases in 1Password or macOS Keychain (Touch ID supported)
 
@@ -93,7 +93,6 @@ pipx uninstall onep-exporter
 
 ## Encryption
 
-- `gpg` (symmetric): passphrase via `BACKUP_PASSPHRASE` env or prompt.
 - `age` (recommended): supports passphrase recipients and public‑key recipients.
   - `--age-pass-source` may be `env`, `prompt`, `1password`, or `keychain`.
   - If the passphrase is present in multiple stores (1Password, Keychain, or the `BACKUP_PASSPHRASE` env), 1p-exporter will verify they are identical and will abort if they differ.
@@ -135,7 +134,7 @@ Use the `init` subcommand to build a config.
 ## Commands (summary)
 
 - `1p-exporter init` — interactive setup and optional passphrase storage
-- `1p-exporter backup [--encrypt age|gpg|none]` — run export (CLI overrides config)
+- `1p-exporter backup [--encrypt age|none]` — run export (CLI overrides config)
 - `1p-exporter browse` - run a TUI to browse archives.
 - `1p-exporter verify <manifest.json>` — verify manifest integrity
 - `1p-exporter query list <regexp> [--dir DIR] [--age-identity PATH] [--age-passphrase PASS]` — inspect existing exports and print item titles that match the given regular expression (default directory is current working directory).  When the target is an encrypted archive the command will attempt to decrypt it using the `age` tool.  Decryption credentials may be provided in several ways:

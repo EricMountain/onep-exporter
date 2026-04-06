@@ -32,8 +32,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="output base directory (overrides saved config)")
     b.add_argument("--formats", "-f", default=argparse.SUPPRESS,
                    help="comma-separated formats to write (json,md). Overrides saved config")
-    b.add_argument("--encrypt", choices=["gpg", "age", "none"],
-                   default=argparse.SUPPRESS, help="encrypt archive (gpg/age) or none — overrides saved config")
+    b.add_argument("--encrypt", choices=["age", "none"],
+                   default=argparse.SUPPRESS, help="encrypt archive (age/none) — overrides saved config")
     # age-pass-source: include 'keychain' only on macOS
     is_macos = sys.platform == "darwin"
     age_pass_choices = ["env", "prompt", "1password",

@@ -162,7 +162,7 @@ def configure_interactive() -> dict:
         ",".join(cfg.get("formats", ["json", "md"])),
     )
     encrypt = prompt(
-        "Default encryption (none/gpg/age)", cfg.get("encrypt", "age")
+        "Default encryption (none/age)", cfg.get("encrypt", "age")
     )
     download_attachments = prompt(
         "Download attachments by default? (y/n)",

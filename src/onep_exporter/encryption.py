@@ -1,4 +1,4 @@
-"""Age/GPG encryption helpers for onep-exporter."""
+"""Age encryption helpers for onep-exporter."""
 
 import hashlib
 import re

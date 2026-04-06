@@ -62,7 +62,6 @@ def doctor() -> bool:
         pkg_map = {
             "age": "age",
             "age-keygen": "age",
-            "gpg": "gnupg",
             "security": None,
         }
         pkg = pkg_map.get(tool, tool)
@@ -90,7 +89,7 @@ def doctor() -> bool:
 
         return f"install package: {pkg}" if pkg else None
 
-    tools_to_check = ["age", "age-keygen", "gpg"]
+    tools_to_check = ["age", "age-keygen"]
     if sys.platform == "darwin":
         tools_to_check.append("security")
 
@@ -119,19 +118,12 @@ def doctor() -> bool:
         _ok(f"loaded from {_config_file_path()}")
 
         encrypt = cfg.get("encrypt", "none")
-        if encrypt not in ("none", "gpg", "age"):
+        if encrypt not in ("none", "age"):
             _err(f"invalid encrypt in config: {encrypt}")
             ok = False
         else:
             _ok(f"encrypt={encrypt}")
-
         # tool checks required by config
-        if encrypt == "gpg":
-            if not ensure_tool("gpg"):
-                _err("config requests gpg encryption but `gpg` not found")
-                ok = False
-            else:
-                _ok("`gpg` available")
         if encrypt == "age":
             if not ensure_tool("age"):
                 _err("config requests age encryption but `age` not found")

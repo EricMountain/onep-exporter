@@ -115,11 +115,6 @@ def test_streaming_encrypt_path(monkeypatch, tmp_path):
     assert any(v.get("file") == "vault-v1.json" for v in manifest.get("vaults", []))
     assert any(f.get("path") == "attachments/a1-file.txt" for f in manifest.get("files", []))
 
-    # now test gpg streaming (no need to re-assert manifest again)
-    called["cmd"] = None
-    out = exporter_module.run_backup(output_base=str(tmp_path), encrypt="gpg", quiet=True)
-    assert called["cmd"][0] == "gpg"
-    assert out.suffix == ".gpg"
     # make ensure_tool return True for any tool we might invoke
     monkeypatch.setattr(exporter_module, "ensure_tool", lambda name: True)
 
@@ -189,14 +184,6 @@ def test_streaming_encrypt_path(monkeypatch, tmp_path):
     assert any(p.endswith(".md") for p in paths)
     vaults = manifest.get("vaults", [])
     assert any(v.get("file") == "vault-v1.json" for v in vaults)
-
-    # now test gpg streaming
-    called["cmd"] = None
-    out = exporter_module.run_backup(output_base=str(tmp_path), encrypt="gpg", quiet=True)
-    assert called["cmd"][0] == "gpg"
-    assert "--output" in called["cmd"]
-    assert out.suffix == ".gpg"
-    assert not any(tmp_path.rglob("*.md")), "markdown should not exist on disk when encrypting"
 
 def test_markdown_written_when_not_encrypted(monkeypatch, tmp_path):
     # ensure minimal export with markdown and no encryption; no files should be left behind
@@ -687,7 +674,7 @@ def test_doctor_tools_section_reports_presence_and_absence(monkeypatch, capsys):
     # simulate some tools present, others absent
     def fake_ensure(name):
         # report core tools + requested ones as present; leave others missing
-        return name in ("op", "age", "gpg", "apt")
+        return name in ("op", "age", "apt")
 
     monkeypatch.setattr(doctor_module, "ensure_tool", fake_ensure)
     monkeypatch.setattr(doctor_module, "load_config", lambda: {})
@@ -700,7 +687,6 @@ def test_doctor_tools_section_reports_presence_and_absence(monkeypatch, capsys):
 
     # present tools reported as available
     assert "`age` available" in captured.out
-    assert "`gpg` available" in captured.out
 
     # missing tools reported as not found (warnings)
     assert "`age-keygen` not found" in captured.out
