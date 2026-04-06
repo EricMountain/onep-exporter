@@ -83,37 +83,6 @@ def list_exporter_keychain_entries(
         )
     return entries
 
-
-def tighten_keychain_entry_access(service: str, username: str) -> bool:
-    """Re-save an item with tighter ACL (no default trusted app).
-
-    Uses ``-T ""`` so the creating app is not implicitly trusted.
-    """
-    if sys.platform != "darwin":
-        raise RuntimeError("keychain access tightening is supported on macOS only")
-
-    secret = _macos_find_password(service, username)
-    if secret is None:
-        return False
-
-    run_cmd(
-        [
-            "security",
-            "add-generic-password",
-            "-s",
-            service,
-            "-a",
-            username,
-            "-w",
-            secret,
-            "-U",
-            "-T",
-            "",
-        ]
-    )
-    return True
-
-
 def get_passphrase_from_keychain(
     service: str, username: str
 ) -> Optional[str]:
