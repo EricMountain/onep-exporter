@@ -71,7 +71,7 @@ def load_config() -> dict:
 def configure_interactive() -> dict:
     """Interactive setup helper that prompts for common options and persists them.
 
-    When age encryption is chosen, all secrets (private key, passphrase) are
+    When age encryption is chosen, recipients and private key are
     stored in a single 1Password Secure Note item.  Existing secrets are
     detected and the user is offered the choice to reuse or overwrite them.
     """
