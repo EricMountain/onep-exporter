@@ -53,9 +53,7 @@ def _iter_exported_items(path: Union[str, Path]):
         except Exception as exc:
             import sys
 
-            print(
-                f"warning: failed to load config: {exc}", file=sys.stderr
-            )
+            print(f"warning: failed to load config: {exc}", file=sys.stderr)
             cfg = {}
         ids, env_pass = resolve_decrypt_credentials(cfg)
 
@@ -94,14 +92,11 @@ def _iter_exported_items(path: Union[str, Path]):
         rc = proc.returncode
         if rc != 0:
             err = err_bytes.decode(errors="ignore").strip()
-            if (
-                "identities are required" in err
-                or "not passphrase-encrypted" in err
-            ):
+            if "identities are required" in err:
                 err += (
                     "; ensure you have an age identity available "
                     "(e.g. run `onep-exporter init` to store one in "
-                    "1Password, or use --age-identity/--age-passphrase)"
+                    "1Password, or use --age-identity)"
                 )
             raise RuntimeError(f"age decryption failed: {err or rc}")
         if not out_bytes:

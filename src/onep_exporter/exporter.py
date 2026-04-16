@@ -43,7 +43,6 @@ from .config import (  # noqa: F401
     save_config,
     _config_file_path,
     configure_interactive,
-    init_setup,
 )
 from .encryption import (  # noqa: F401
     resolve_decrypt_credentials as _resolve_decrypt_credentials,
@@ -380,35 +379,26 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
 
     exporter = OpExporter()
 
-    # if we're going to use age encryption we want to resolve the passphrase
-    # / recipient configuration immediately, before we start fetching anything
-    # from 1Password.  this allows us to fail fast for common mis‑configurations
-    # (e.g. specifying both a passphrase source and explicit recipients) and
-    # avoids downloading vaults/attachments only to error out later.
-    passphrase = None
+    # if we're going to use age encryption we want to resolve the
+    # recipient configuration immediately, before we start fetching anything
+    # from 1Password. This allows us to fail fast for common
+    # mis‑configurations and avoids downloading vaults/attachments only to
+    # error out later.
     recipients: list[str] = []
     if encrypt == "age":
-        passphrase, recipients = resolve_age_config(
+        recipients = resolve_age_config(
             exporter,
-            age_pass_source=age_pass_source,
-            age_pass_item=age_pass_item,
-            age_pass_field=age_pass_field,
             age_recipients=age_recipients,
             age_use_yubikey=age_use_yubikey,
-            sync_passphrase_from_1password=sync_passphrase_from_1password,
-            age_keychain_service=age_keychain_service,
-            age_keychain_username=age_keychain_username,
         )
 
-        # sync decryption credentials to local keychain so that query-time
-        # operations work without 1Password being available.
+        # sync private key to local keychain so that query-time operations
+        # work without 1Password being available.
         sync_age_credentials_to_keychain(
             exporter,
             age_pass_item=age_pass_item,
-            age_pass_field=age_pass_field,
             age_keychain_service=age_keychain_service,
             age_keychain_username=age_keychain_username,
-            passphrase=passphrase,
         )
 
     vaults = exporter.list_vaults()
@@ -721,8 +711,6 @@ def run_backup(*, output_base: Union[str, Path] = "backups", formats=("json", "m
         cmd = ["age", "-o", out_enc]
         for r in recipients:
             cmd.extend(["-r", r])
-        if passphrase:
-            cmd.append("--passphrase")
     else:
         raise RuntimeError(f"unsupported encrypt mode: {encrypt}")
 

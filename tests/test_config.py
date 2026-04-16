@@ -53,7 +53,7 @@ def test_cli_default_age_pass_source(monkeypatch):
     monkeypatch.setattr(cli, "load_config", lambda: cfg)
     monkeypatch.setattr(cli, "run_backup", fake_run_backup)
     cli.main(["backup"])
-    assert called.get("age_pass_source") == "prompt"
+    assert called.get("age_recipients") == ""
 
 
 def test_cli_flag_overrides_config(monkeypatch):
@@ -165,11 +165,9 @@ def test_configure_interactive_generates_age_key_and_stores(monkeypatch, tmp_pat
         "",       # download_attachments (accept)
         "",       # 1Password item title (accept default)
         "",       # 1Password vault (optional)
-        "prompt",  # age_pass_source
         "y",      # Generate a new age keypair? -> yes
         "",       # age_recipients (accept default including generated pub)
         "n",      # include yubikey? -> no
-        "y",      # Generate a new passphrase? -> yes
     ])
 
     monkeypatch.setattr(builtins, "input", lambda prompt="": next(inputs))
@@ -183,9 +181,6 @@ def test_configure_interactive_generates_age_key_and_stores(monkeypatch, tmp_pat
     assert "age_private_key" in upserted
     assert upserted["age_private_key"]["value"].startswith(
         "-----BEGIN AGE PRIVATE KEY-----")
-    # passphrase should have been stored
-    assert "passphrase" in upserted
-    assert len(upserted["passphrase"]["value"]) > 0
     # recipients should have been stored
     assert "age_recipients" in upserted
     assert upserted["age_recipients"]["field_type"] == "TEXT"
@@ -241,11 +236,9 @@ def test_configure_interactive_parses_commented_public_and_secret_token(monkeypa
     inputs_a = iter([
         "", "", "", "",     # basics
         "", "",             # 1P item title + vault
-        "prompt",           # pass source
         "y",                # generate keypair
         "",                 # recipients (accept default)
         "n",                # yubikey
-        "y",                # generate passphrase
     ])
     monkeypatch.setattr(builtins, "input", lambda prompt="": next(inputs_a))
     cfg1 = exporter_module.configure_interactive()
@@ -272,11 +265,9 @@ def test_configure_interactive_parses_commented_public_and_secret_token(monkeypa
     inputs_b = iter([
         "", "", "", "",     # basics
         "", "",             # 1P item title + vault
-        "prompt",           # pass source
         "y",                # generate keypair
         "",                 # recipients (accept default — should include both)
         "n",                # yubikey
-        "y",                # generate passphrase
     ])
     monkeypatch.setattr(builtins, "input", lambda prompt="": next(inputs_b))
     cfg2 = exporter_module.configure_interactive()
@@ -335,11 +326,9 @@ def test_default_private_key_title_includes_username(monkeypatch, tmp_path):
         "",       # download_attachments
         "",       # Accept default 1P item title
         "",       # vault (optional)
-        "prompt",  # age_pass_source
         "y",      # Generate age keypair
         "",       # age_recipients (accept default)
         "n",      # yubikey? no
-        "y",      # Generate passphrase? yes
     ])
     monkeypatch.setattr(builtins, "input", lambda prompt="": next(inputs))
 
@@ -351,8 +340,8 @@ def test_default_private_key_title_includes_username(monkeypatch, tmp_path):
 
 
 def test_configure_interactive_reuses_existing_secrets(monkeypatch, tmp_path):
-    """When the 1P item already has a private key and passphrase the user should be
-    asked whether to reuse them. Choosing 'yes' must NOT overwrite anything."""
+    """When the 1P item already has a private key the user should be
+    asked whether to reuse it. Choosing 'yes' must NOT overwrite anything."""
     import builtins
     import onep_exporter.exporter as exporter_module
     import onep_exporter.encryption as encryption_module
@@ -379,7 +368,6 @@ def test_configure_interactive_reuses_existing_secrets(monkeypatch, tmp_path):
             "id": "existing-item",
             "fields": [
                 {"label": "age_private_key", "value": "AGE-SECRET-KEY-EXISTING"},
-                {"label": "passphrase", "value": "existing-passphrase"},
                 {"label": "age_recipients", "value": "age1existingrecipient"},
             ],
         }
@@ -396,11 +384,9 @@ def test_configure_interactive_reuses_existing_secrets(monkeypatch, tmp_path):
     inputs = iter([
         "", "", "", "",    # basics
         "", "",            # 1P item title + vault
-        "prompt",          # pass source
         "y",               # Reuse existing private key? -> yes
         "",                # recipients (accept existing)
         "n",               # yubikey
-        "y",               # Reuse existing passphrase? -> yes
     ])
     monkeypatch.setattr(builtins, "input", lambda prompt="": next(inputs))
 
@@ -414,7 +400,7 @@ def test_configure_interactive_reuses_existing_secrets(monkeypatch, tmp_path):
 
 
 def test_configure_interactive_overwrites_existing_secrets(monkeypatch, tmp_path):
-    """When the user chooses to overwrite, new keypair and passphrase should be generated
+    """When the user chooses to overwrite, a new keypair should be generated
     and stored, but existing values must NOT be displayed."""
     import builtins
     import onep_exporter.exporter as exporter_module
@@ -443,7 +429,6 @@ def test_configure_interactive_overwrites_existing_secrets(monkeypatch, tmp_path
             "id": "existing-item",
             "fields": [
                 {"label": "age_private_key", "value": "AGE-SECRET-KEY-OLD"},
-                {"label": "passphrase", "value": "old-passphrase"},
                 {"label": "age_recipients", "value": "age1oldrecipient"},
             ],
         }
@@ -460,11 +445,9 @@ def test_configure_interactive_overwrites_existing_secrets(monkeypatch, tmp_path
     inputs = iter([
         "", "", "", "",    # basics
         "", "",            # 1P item title + vault
-        "prompt",          # pass source
         "n",               # Reuse existing private key? -> NO (overwrite)
         "",                # recipients (accept default, should have new pub)
         "n",               # yubikey
-        "n",               # Reuse existing passphrase? -> NO (overwrite)
     ])
     monkeypatch.setattr(builtins, "input", lambda prompt="": next(inputs))
 
@@ -475,25 +458,18 @@ def test_configure_interactive_overwrites_existing_secrets(monkeypatch, tmp_path
     # private key should have been overwritten with the new one
     assert "age_private_key" in upserted
     assert upserted["age_private_key"] == "AGE-SECRET-KEY-1NEWKEY"
-    # passphrase should have been overwritten with a new generated value
-    assert "passphrase" in upserted
-    assert upserted["passphrase"] != "old-passphrase"
-    assert len(upserted["passphrase"]) > 0
 
 
 def test_cli_init_flagged_runs_doctor_failure(monkeypatch):
     import onep_exporter.cli as cli
-    called = {"init_setup": False}
-
-    def fake_init_setup(**kwargs):
-        called["init_setup"] = True
-        return "pw"
-    monkeypatch.setattr(cli, "init_setup", fake_init_setup)
+    called = {"interactive": False}
+    monkeypatch.setattr(cli, "configure_interactive",
+                        lambda: called.update({"interactive": True}) or {})
     monkeypatch.setattr(cli, "doctor", lambda: False)
     try:
-        cli.main(["init", "--generate"])
+        cli.main(["init"])
     except SystemExit as e:
         assert e.code == 2
-        assert called["init_setup"] is True
+        assert called["interactive"] is True
     else:
         raise AssertionError("expected SystemExit from cli.main")

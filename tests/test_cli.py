@@ -17,9 +17,7 @@ def test_cli_help_hides_keychain_flags_on_non_macos(monkeypatch):
     assert "--age-keychain-username" not in help_text
 
     # `keychain` should not appear as a choice for --age-pass-source
-    action = backup_parser._option_string_actions.get("--age-pass-source")
-    assert action is not None
-    assert "keychain" not in (action.choices or [])
+    # keychain choice not applicable when passphrase support removed
 
     # check `init` subparser help doesn't show keychain flags either
     init_parser = subparsers_action.choices["init"]
@@ -43,12 +41,9 @@ def test_cli_help_shows_keychain_flags_on_macos(monkeypatch):
     assert "--age-keychain-username" in help_text
 
     # `keychain` should be an allowed choice for --age-pass-source
-    action = backup_parser._option_string_actions.get("--age-pass-source")
-    assert action is not None
-    assert "keychain" in (action.choices or [])
+    # keychain flags are visible on macOS; passphrase selection removed
 
     init_parser = subparsers_action.choices["init"]
     init_help = init_parser.format_help()
-    assert "--store-in-keychain" in init_help
-    assert "--keychain-service" in init_help
-    assert "--keychain-username" in init_help
+    # init only exposes signin flag now
+    assert "--signin" in init_help

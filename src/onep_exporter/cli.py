@@ -2,7 +2,7 @@ import argparse
 import sys
 import os
 
-from .config import load_config, configure_interactive, init_setup
+from .config import load_config, configure_interactive
 from .doctor import doctor
 from .exporter import run_backup, OpExporter
 from .keychain import (
@@ -34,33 +34,20 @@ def build_parser() -> argparse.ArgumentParser:
                    help="comma-separated formats to write (json,md). Overrides saved config")
     b.add_argument("--encrypt", choices=["age", "none"],
                    default=argparse.SUPPRESS, help="encrypt archive (age/none) — overrides saved config")
-    # age-pass-source: include 'keychain' only on macOS
-    is_macos = sys.platform == "darwin"
-    age_pass_choices = ["env", "prompt", "1password",
-                        "keychain"] if is_macos else ["env", "prompt", "1password"]
-    age_pass_help = ("where to obtain the age passphrase when using age (env=BACKUP_PASSPHRASE, prompt=ask, 1password=read from item, keychain=macOS keychain). Overrides saved config"
-                     if is_macos else
-                     "where to obtain the age passphrase when using age (env=BACKUP_PASSPHRASE, prompt=ask, 1password=read from item). Overrides saved config")
-    b.add_argument("--age-pass-source", choices=age_pass_choices, default=argparse.SUPPRESS,
-                   help=age_pass_help)
-    b.add_argument("--age-pass-item", default=argparse.SUPPRESS,
-                   help="1Password item title or id that contains the passphrase (used when --age-pass-source=1password)")
-    b.add_argument("--age-pass-field", default=argparse.SUPPRESS,
-                   help="field name inside the 1Password item to use for the passphrase (default: 'passphrase'). "
-                        "if supplied but not found, the backup will fail instead of guessing")
     # keychain-related flags are macOS-specific — hide them from help on other platforms
-    keychain_help = "macOS keychain service name (when using --age-pass-source keychain)" if is_macos else argparse.SUPPRESS
+    is_macos = sys.platform == "darwin"
+    keychain_help = "macOS keychain service name" if is_macos else argparse.SUPPRESS
     b.add_argument("--age-keychain-service", default=argparse.SUPPRESS,
                    help=keychain_help)
-    keychain_user_help = "macOS keychain account/username (when using --age-pass-source keychain)" if is_macos else argparse.SUPPRESS
+    keychain_user_help = "macOS keychain account/username" if is_macos else argparse.SUPPRESS
     b.add_argument("--age-keychain-username", default=argparse.SUPPRESS,
                    help=keychain_user_help)
+    b.add_argument("--age-pass-item", default=argparse.SUPPRESS,
+                   help="1Password item title or id that contains age secrets (private key and recipients)")
     b.add_argument("--age-recipients", default=argparse.SUPPRESS,
                    help="comma-separated age public recipients (optional)")
     b.add_argument("--age-use-yubikey", action="store_true", default=argparse.SUPPRESS,
                    help="(optional) include a YubiKey-backed recipient (requires user to have configured a yubikey age identity)")
-    b.add_argument("--sync-passphrase-from-1password", action="store_true", default=argparse.SUPPRESS,
-                   help="treat the passphrase stored in 1Password as authoritative and copy it to other configured stores (keychain/ENV) before encrypting")
     b.add_argument("--no-attachments", action="store_true", default=argparse.SUPPRESS,
                    help="do not attempt to download attachments (overrides saved config)")
     b.add_argument("--vault", action="append", dest="vaults",
@@ -68,29 +55,9 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--quiet", action="store_true", default=argparse.SUPPRESS,
                    help="minimal output (overrides saved config)")
 
-    # init: generate/store a backup passphrase (1Password / macOS Keychain) and optionally run `op signin`
+    # init: generate a configuration
     i = sub.add_parser(
-        "init", help="Initialize backup passphrase and store in 1Password/keychain")
-    i.add_argument("--generate", action="store_true",
-                   help="generate a new random passphrase")
-    i.add_argument(
-        "--passphrase", help="provide a passphrase to store instead of generating")
-    i.add_argument("--store-in-1password",
-                   help="store generated/provided passphrase in 1Password (item title)")
-    # keychain flags are macOS-only; keep attributes available but hide on other platforms
-    store_in_keychain_help = "store generated/provided passphrase in macOS Keychain" if sys.platform == "darwin" else argparse.SUPPRESS
-    i.add_argument("--store-in-keychain", action="store_true",
-                   help=store_in_keychain_help)
-    keychain_service_help = "keychain service name to store under" if sys.platform == "darwin" else argparse.SUPPRESS
-    i.add_argument("--keychain-service", default="onep-exporter",
-                   help=keychain_service_help)
-    keychain_user_help = "keychain account/username" if sys.platform == "darwin" else argparse.SUPPRESS
-    i.add_argument("--keychain-username", default="backup",
-                   help=keychain_user_help)
-    i.add_argument("--onepassword-field", default="passphrase",
-                   help="field name to use when storing in 1Password (default: passphrase)")
-    i.add_argument("--onepassword-vault",
-                   help="1Password vault name or id to store the passphrase in (optional)")
+        "init", help="Run interactive configuration and optionally sign in to 1Password")
     i.add_argument("--signin", action="store_true",
                    help="invoke `op signin` to allow interactive unlock (Touch ID) and print session token")
 
@@ -136,8 +103,6 @@ def build_parser() -> argparse.ArgumentParser:
     ql.add_argument("--age-identity", action="append", dest="age_identities",
                     help="path to an age identity file to use for decrypting archives; can be repeated."
                     )
-    ql.add_argument("--age-passphrase", dest="age_passphrase",
-                    help="passphrase to use when decrypting age archives; sets BACKUP_PASSPHRASE environment variable")
 
     qg = qsub.add_parser("get", help="Retrieve the full contents of a single item")
     qg.add_argument("item", help="item title (exact, case-sensitive) or item id to retrieve")
@@ -150,8 +115,6 @@ def build_parser() -> argparse.ArgumentParser:
                     help="print only the value of the named field instead of the full item")
     qg.add_argument("--age-identity", action="append", dest="age_identities",
                     help="path to an age identity file to use for decrypting archives; can be repeated.")
-    qg.add_argument("--age-passphrase", dest="age_passphrase",
-                    help="passphrase to use when decrypting age archives; sets BACKUP_PASSPHRASE environment variable")
 
     # 'browse' command — interactive TUI
     br = sub.add_parser("browse", help="Interactive TUI to search and view exported items")
@@ -165,8 +128,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _setup_query_env(args) -> None:
     """Set environment variables for age decryption based on CLI flags."""
-    if getattr(args, "age_passphrase", None) is not None:
-        os.environ["BACKUP_PASSPHRASE"] = args.age_passphrase
     identities = getattr(args, "age_identities", None)
     if identities:
         os.environ["AGE_IDENTITIES"] = os.pathsep.join(identities)
@@ -205,58 +166,37 @@ def main(argv=None):
         )
         quiet = _opt("quiet", cfg.get("quiet"), False)
 
-        age_pass_source = _opt("age_pass_source", age_cfg.get("pass_source"), "prompt")
         age_pass_item = _opt("age_pass_item", age_cfg.get("pass_item"))
-        age_pass_field = _opt("age_pass_field", age_cfg.get("pass_field"), "passphrase")
         age_recipients = _opt("age_recipients", age_cfg.get("recipients"), "")
         age_use_yubikey = _opt("age_use_yubikey", age_cfg.get("use_yubikey"), False)
-        sync_passphrase_from_1password = _opt("sync_passphrase_from_1password", None, False)
         age_keychain_service = _opt("age_keychain_service", age_cfg.get("keychain_service"), "onep-exporter")
         age_keychain_username = _opt("age_keychain_username", age_cfg.get("keychain_username"), "backup")
         selected_vaults = _opt("vaults", None, None)
 
         try:
             run_backup(
-            output_base=output_base,
-            formats=formats,
-            encrypt=encrypt,
-            download_attachments=download_attachments,
-            quiet=quiet,
-            selected_vaults=selected_vaults,
-            age_pass_source=age_pass_source,
-            age_pass_item=age_pass_item,
-            age_pass_field=age_pass_field,
-            age_recipients=age_recipients,
-            age_use_yubikey=age_use_yubikey,
-            sync_passphrase_from_1password=sync_passphrase_from_1password,
-            age_keychain_service=age_keychain_service,
-            age_keychain_username=age_keychain_username,
-            fail_on_error=True,
-        )
+                output_base=output_base,
+                formats=formats,
+                encrypt=encrypt,
+                download_attachments=download_attachments,
+                quiet=quiet,
+                selected_vaults=selected_vaults,
+                age_pass_item=age_pass_item,
+                age_recipients=age_recipients,
+                age_use_yubikey=age_use_yubikey,
+                age_keychain_service=age_keychain_service,
+                age_keychain_username=age_keychain_username,
+                fail_on_error=True,
+            )
         except Exception as e:
             print(f"error: {e}")
             sys.exit(1)
     elif args.cmd == "init":
-        # Interactive flow when no explicit options are provided
-        any_flags = any((args.generate, args.passphrase,
-                        args.store_in_1password, args.store_in_keychain, args.signin))
+        # Interactive flow — allow signin then run interactive configuration
         if args.signin:
             OpExporter().signin_interactive()
-        if not any_flags:
-            configure_interactive()
-        else:
-            init_setup(
-                passphrase=args.passphrase,
-                generate=args.generate,
-                store_in_1password=args.store_in_1password,
-                onepassword_vault=None,
-                store_in_keychain=args.store_in_keychain,
-                keychain_service=args.keychain_service,
-                keychain_username=args.keychain_username,
-                onepassword_field=args.onepassword_field,
-            )
-
-        # After initialization, run a `doctor` check on the generated configuration
+        configure_interactive()
+        # After configuration, run a `doctor` check on the generated configuration
         ok = doctor()
         sys.exit(0 if ok else 2)
     elif args.cmd == "verify":

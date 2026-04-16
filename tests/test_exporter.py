@@ -100,11 +100,8 @@ def test_streaming_encrypt_path(monkeypatch, tmp_path):
         return 0, "", ""
     monkeypatch.setattr(exporter_module, "run_cmd", fake_run_cmd)
 
-    # ensure prompt returns a passphrase
-    monkeypatch.setattr("getpass.getpass", lambda prompt: "pw123")
-
-    # test age encryption streaming with attachments
-    out = exporter_module.run_backup(output_base=str(tmp_path), encrypt="age", age_pass_source="prompt", age_recipients="", quiet=True)
+    # test age encryption streaming with attachments (recipients-only)
+    out = exporter_module.run_backup(output_base=str(tmp_path), encrypt="age", age_recipients="age1dummyrecipient", quiet=True)
     assert called["cmd"][0] == "age"
     assert out.suffix == ".age"
     # attachments and vault JSON should have been streamed only
@@ -165,11 +162,8 @@ def test_streaming_encrypt_path(monkeypatch, tmp_path):
     import subprocess as _sub
     monkeypatch.setattr(_sub, "Popen", FakePopen)
 
-    # ensure prompt returns a passphrase
-    monkeypatch.setattr("getpass.getpass", lambda prompt: "pw123")
-
-    # test age encryption streaming
-    out = exporter_module.run_backup(output_base=str(tmp_path), encrypt="age", age_pass_source="prompt", age_recipients="", quiet=True)
+    # test age encryption streaming (recipients-only)
+    out = exporter_module.run_backup(output_base=str(tmp_path), encrypt="age", age_recipients="age1dummyrecipient", quiet=True)
     assert called["cmd"][0] == "age"
     assert "-o" in called["cmd"]
     assert out.suffix == ".age"
@@ -256,11 +250,8 @@ def test_init_setup_stores(monkeypatch):
     monkeypatch.setattr(keychain_module, "store_passphrase_in_keychain",
                         lambda s, u, p: calls.update({"kc": True}))
 
-    pw = exporter_module.init_setup(passphrase="xyz", generate=False,
-                                    store_in_1password="My Pass", store_in_keychain=True, onepassword_vault="myvault")
-    assert pw == "xyz"
-    assert calls["1p"] is True
-    assert calls["kc"] is True
+    # init_setup removed; legacy behavior no longer supported. Instead ensure
+    # that configure_interactive/upsert path is exercised via other tests.
 
 
 def test_store_passphrase_skips_if_exists(monkeypatch):
@@ -402,14 +393,7 @@ def test_passphrase_mismatch_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(exporter_module, "run_cmd", lambda cmd, capture_output=True, check=True, input=None: (
         0, "[]", "") if cmd[:3] == ["op", "vault", "list"] else (0, "", ""))
 
-    try:
-        exporter_module.run_backup(output_base=str(tmp_path), encrypt="age", age_pass_source="1password", age_pass_item="Item",
-                                   age_pass_field="password", age_keychain_service="svc", age_keychain_username="acct", quiet=True)
-    except RuntimeError as e:
-        assert "passphrase mismatch" in str(e)
-    else:
-        raise AssertionError(
-            "expected RuntimeError due to passphrase mismatch")
+    pytest.skip("passphrase support removed; mismatch check not applicable")
 
 
 def test_age_recipients_and_passphrase_conflict(monkeypatch, tmp_path):
@@ -422,13 +406,7 @@ def test_age_recipients_and_passphrase_conflict(monkeypatch, tmp_path):
     monkeypatch.setattr(exporter_module, "run_cmd", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("run_cmd should not be called")))
     monkeypatch.setattr(exporter_module.OpExporter, "list_vaults", lambda self: (_ for _ in ()).throw(AssertionError("list_vaults should not be called")))
 
-    with pytest.raises(RuntimeError) as exc:
-        exporter_module.run_backup(
-            output_base=str(tmp_path), encrypt="age",
-            age_pass_source="env",
-            age_recipients="age1abc,age1def",
-            quiet=True)
-    assert "cannot use both a passphrase and recipients" in str(exc.value)
+    pytest.skip("passphrase support removed; conflict not applicable")
 
 
 def test_age_encryption_with_recipients_only(monkeypatch, tmp_path):
@@ -453,7 +431,7 @@ def test_age_encryption_with_recipients_only(monkeypatch, tmp_path):
 
     out = exporter_module.run_backup(
         output_base=str(tmp_path), encrypt="age",
-        age_pass_source="env", age_recipients="age1foo,age1bar",
+        age_recipients="age1foo,age1bar",
         quiet=True)
     # command should include recipients and omit --passphrase
     assert "-r" in called["cmd"]
@@ -489,10 +467,8 @@ def test_output_base_created_for_encrypted(monkeypatch, tmp_path):
 
     base = tmp_path / "nope" / "sub"
     assert not base.exists()
-    # avoid prompting during this test by stubbing getpass
-    import getpass
-    monkeypatch.setattr(getpass, "getpass", lambda prompt: "pw123")
-    out = exporter_module.run_backup(output_base=str(base), encrypt="age", age_pass_source="prompt", age_recipients="", quiet=True)
+    # provide at least one recipient (passphrase removed)
+    out = exporter_module.run_backup(output_base=str(base), encrypt="age", age_recipients="age1dummy", quiet=True)
     assert base.exists()
     assert out.parent == base
     assert out.suffix == ".age"
@@ -506,16 +482,7 @@ def test_age_passphrase_not_found_reports_item_and_field(monkeypatch, tmp_path):
     monkeypatch.setattr(exporter_module, "run_cmd", lambda cmd, capture_output=True, check=True, input=None: (
         (0, "[]", "") if cmd[:3] == ["op", "vault", "list"] else (0, "", "")))
 
-    with pytest.raises(RuntimeError) as exc:
-        exporter_module.run_backup(output_base=str(tmp_path), encrypt="age",
-                                   age_pass_source="1password",
-                                   age_pass_item="Item",
-                                   age_pass_field="password",
-                                   quiet=True)
-    msg = str(exc.value)
-    assert "could not extract passphrase" in msg
-    assert "Item" in msg
-    assert "password" in msg
+    pytest.skip("passphrase support removed; no passphrase extraction")
 
 
 def test_age_missing_passphrase_with_recipients_still_works(monkeypatch, tmp_path):
@@ -543,9 +510,7 @@ def test_age_missing_passphrase_with_recipients_still_works(monkeypatch, tmp_pat
     monkeypatch.setattr(getpass, "getpass", lambda prompt: (_ for _ in ()).throw(AssertionError("prompted unexpectedly")))
 
     out = exporter_module.run_backup(output_base=str(tmp_path), encrypt="age",
-                                      age_pass_source="1password",
                                       age_pass_item="Item",
-                                      age_pass_field="password",
                                       age_recipients="age1foo",
                                       quiet=True)
     # should have used age with recipient and no --passphrase
@@ -579,7 +544,6 @@ def test_age_pass_source_prompt_skipped_if_recipients(monkeypatch, tmp_path):
 
     # run backup: specifying recipients should make prompt irrelevant
     out = exporter_module.run_backup(output_base=str(tmp_path), encrypt="age",
-                                      age_pass_source="prompt",
                                       age_recipients="age1foo",
                                       quiet=True)
     assert called["cmd"][0] == "age"
@@ -588,11 +552,12 @@ def test_age_pass_source_prompt_skipped_if_recipients(monkeypatch, tmp_path):
     assert out.suffix == ".age"
 
 
-def test_sync_passphrase_from_1password_to_keychain(monkeypatch, tmp_path):
+def test_sync_private_key_from_1password_to_keychain(monkeypatch, tmp_path):
     # ensure tools exist and age will run
     monkeypatch.setattr(exporter_module, "ensure_tool", lambda name: True)
 
     # 1Password has the authoritative value; keychain empty
+    # 1Password has the authoritative private key value; keychain empty
     monkeypatch.setattr(exporter_module.OpExporter,
                         "get_item_field_value", lambda self, item, field: "sync-me")
     monkeypatch.setattr(
@@ -623,8 +588,8 @@ def test_sync_passphrase_from_1password_to_keychain(monkeypatch, tmp_path):
             return 0
     monkeypatch.setattr(_sub, "Popen", FakePopen)
 
-    out = exporter_module.run_backup(output_base=str(tmp_path), encrypt="age", age_pass_source="1password", age_pass_item="Item",
-                                     sync_passphrase_from_1password=True, age_keychain_service="svc", age_keychain_username="acct", quiet=True)
+    out = exporter_module.run_backup(output_base=str(tmp_path), encrypt="age", age_pass_item="Item",
+                                     age_recipients="age1sync", age_keychain_service="svc", age_keychain_username="acct", quiet=True)
 
     assert stored["kc"] == ("svc", "acct", "sync-me")
     assert out.suffix == ".age"
@@ -659,15 +624,15 @@ def test_doctor_detects_missing_age_tool_from_config(monkeypatch, capsys):
 
 def test_doctor_ok_with_valid_config_and_tools(monkeypatch, capsys):
     monkeypatch.setattr(doctor_module, "ensure_tool", lambda name: True)
-    monkeypatch.setenv("BACKUP_PASSPHRASE", "pw123")
+    # passphrase support removed — test with recipients configured
     monkeypatch.setattr(doctor_module, "load_config", lambda: {
-                        "encrypt": "age", "formats": ["json"], "age": {"pass_source": "env"}})
+                        "encrypt": "age", "formats": ["json"], "age": {"recipients": "age1foo"}})
     ok = exporter_module.doctor()
     captured = capsys.readouterr()
     assert ok is True
     assert "✅" in captured.out
     assert "OK" in captured.out
-    assert "BACKUP_PASSPHRASE" in captured.out
+    assert "age.recipients" in captured.out or "recipients" in captured.out
 
 
 def test_doctor_tools_section_reports_presence_and_absence(monkeypatch, capsys):
@@ -734,17 +699,13 @@ def test_doctor_includes_security_for_darwin(monkeypatch, capsys):
 
 
 def test_doctor_detects_age_conflict(monkeypatch, capsys):
-    # configuration that wrongly specifies both a passphrase source and
-    # explicit recipients should be flagged as an error in the doctor output
+    # with recipients configured the doctor should report them and succeed
     monkeypatch.setattr(doctor_module, "ensure_tool", lambda name: True)
     monkeypatch.setattr(doctor_module, "load_config", lambda: {
         "encrypt": "age",
-        "age": {"pass_source": "env", "recipients": "age1foo"},
+        "age": {"recipients": "age1foo"},
     })
     ok = exporter_module.doctor()
     captured = capsys.readouterr()
-    assert ok is False
+    assert ok is True
     assert "recipients" in captured.out
-    assert "pass_source" in captured.out
-    # message should indicate the mutual exclusion
-    assert "both set" in captured.out or "explicit recipients" in captured.out

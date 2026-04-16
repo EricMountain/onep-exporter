@@ -67,66 +67,6 @@ def load_config() -> dict:
     return {}
 
 
-def init_setup(
-    *,
-    passphrase: Optional[str] = None,
-    generate: bool = False,
-    store_in_1password: Optional[str] = None,
-    onepassword_vault: Optional[str] = None,
-    store_in_keychain: bool = False,
-    keychain_service: str = "onep-exporter",
-    keychain_username: str = "backup",
-    onepassword_field: str = "passphrase",
-) -> str:
-    """Create or store an age passphrase according to provided options.
-
-    Returns the plaintext passphrase (also stores it as requested).
-    """
-    import secrets
-    import getpass
-
-    from .exporter import OpExporter
-    from .keychain import store_passphrase_in_keychain
-
-    if generate and passphrase:
-        raise RuntimeError("cannot specify --generate and --passphrase")
-    if not passphrase:
-        if generate:
-            passphrase = secrets.token_urlsafe(32)
-        else:
-            passphrase = getpass.getpass("Passphrase to store: ")
-
-    exporter = OpExporter()
-
-    if store_in_1password:
-        try:
-            res = exporter.store_passphrase_in_1password(
-                store_in_1password,
-                onepassword_field,
-                passphrase,
-                vault=onepassword_vault,
-            )
-            if res.get("id"):
-                print(
-                    f"passphrase stored or already exists in 1Password item: {res.get('id')}"
-                )
-        except Exception as e:
-            print(f"failed to store passphrase in 1Password: {e}")
-
-    if store_in_keychain:
-        try:
-            store_passphrase_in_keychain(
-                keychain_service, keychain_username, passphrase
-            )
-            print(
-                f"stored passphrase in macOS Keychain: service={keychain_service} account={keychain_username}"
-            )
-        except Exception as e:
-            print(f"failed to store passphrase in keychain: {e}")
-
-    print("Passphrase (keep this safe):", passphrase)
-    return passphrase
-
 
 def configure_interactive() -> dict:
     """Interactive setup helper that prompts for common options and persists them.
@@ -170,9 +110,7 @@ def configure_interactive() -> dict:
     )
 
     age_cfg = cfg.get("age", {})
-    age_pass_source = None
     age_pass_item = None
-    age_pass_field = "passphrase"
     age_keychain_service = age_cfg.get("keychain_service", "onep-exporter")
     age_keychain_username = age_cfg.get("keychain_username", "backup")
     age_recipients = age_cfg.get("recipients", "")
@@ -197,24 +135,9 @@ def configure_interactive() -> dict:
         )
         age_pass_item = op_item_title
 
-        # passphrase source (for backup-time retrieval)
-        pass_source_choices = (
-            "env/prompt/1password/keychain"
-            if is_macos
-            else "env/prompt/1password"
-        )
-        default_pass_source = age_cfg.get("pass_source", "1password")
-        age_pass_source = prompt(
-            f"age passphrase source ({pass_source_choices})",
-            default_pass_source,
-        )
-        if is_macos and age_pass_source == "keychain":
-            age_keychain_service = prompt(
-                "Keychain service name", age_keychain_service
-            )
-            age_keychain_username = prompt(
-                "Keychain account name", age_keychain_username
-            )
+        # --- (no passphrase support) ---
+        # The 1Password item is used to hold the age private key and the
+        # configured recipients.  We still allow selecting a vault.
 
         # --- ensure the 1Password item exists and inspect existing fields ---
         exporter = OpExporter()
@@ -223,8 +146,8 @@ def configure_interactive() -> dict:
         )
         item_id = item.get("id")
 
+
         existing_private_key = item_field_value(item, "age_private_key")
-        existing_passphrase = item_field_value(item, "passphrase")
         existing_recipients = item_field_value(item, "age_recipients")
 
         # --- age keypair ---
@@ -293,72 +216,6 @@ def configure_interactive() -> dict:
         )
         age_use_yubikey = yub.lower().startswith("y")
 
-        # --- passphrase ---
-        if existing_passphrase:
-            reuse_pp = prompt(
-                "Existing passphrase found in 1Password. Reuse? (y/n)", "y"
-            )
-            if not reuse_pp.lower().startswith("y"):
-                passphrase = secrets.token_urlsafe(32)
-                try:
-                    exporter.upsert_item_field(
-                        item_id, "passphrase", passphrase
-                    )
-                except Exception as e:
-                    print(
-                        f"warning: failed to store passphrase in 1Password: {e}"
-                    )
-                print(
-                    f"New passphrase stored in 1Password item "
-                    f"'{op_item_title}', field 'passphrase'."
-                )
-                print(
-                    f"To export it safely, use:  "
-                    f"op item get '{op_item_title}' --field passphrase"
-                )
-            else:
-                passphrase = existing_passphrase
-            # sync passphrase to local keychain
-            try:
-                store_passphrase_in_keychain(
-                    age_keychain_service, age_keychain_username, passphrase
-                )
-            except Exception as e:
-                print(
-                    f"warning: failed to sync passphrase to keychain: {e}"
-                )
-        else:
-            gen_pp = prompt("Generate a new passphrase? (y/n)", "y")
-            if gen_pp.lower().startswith("y"):
-                passphrase = secrets.token_urlsafe(32)
-            else:
-                passphrase = getpass.getpass("Enter passphrase to store: ")
-            try:
-                exporter.upsert_item_field(
-                    item_id, "passphrase", passphrase
-                )
-            except Exception as e:
-                print(
-                    f"warning: failed to store passphrase in 1Password: {e}"
-                )
-            # sync passphrase to local keychain
-            try:
-                store_passphrase_in_keychain(
-                    age_keychain_service, age_keychain_username, passphrase
-                )
-            except Exception as e:
-                print(
-                    f"warning: failed to sync passphrase to keychain: {e}"
-                )
-            print(
-                f"Passphrase stored in 1Password item "
-                f"'{op_item_title}', field 'passphrase'."
-            )
-            print(
-                f"To export it safely, use:  "
-                f"op item get '{op_item_title}' --field passphrase"
-            )
-
     # assemble global config
     new_cfg = {
         "backup_directory": output,
@@ -366,9 +223,7 @@ def configure_interactive() -> dict:
         "encrypt": encrypt,
         "download_attachments": download_attachments.lower().startswith("y"),
         "age": {
-            "pass_source": age_pass_source,
             "pass_item": age_pass_item,
-            "pass_field": age_pass_field,
             "recipients": age_recipients,
             "use_yubikey": bool(age_use_yubikey),
             "keychain_service": age_keychain_service,

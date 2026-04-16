@@ -159,8 +159,8 @@ def sync_keychain() -> bool:
     """Pull age credentials from 1Password and store them in macOS keychain.
 
     Reads the saved configuration to find the 1Password item, fetches the
-    ``age_private_key`` and ``passphrase`` fields, and writes them to the
-    keychain.  Returns True if at least one credential was synced.
+    ``age_private_key`` field and writes it to the keychain. Returns True
+    if at least one credential was synced.
     """
     from .config import load_config
     from .exporter import OpExporter
@@ -184,9 +184,7 @@ def sync_keychain() -> bool:
     synced = 0
 
     # private key
-    print(
-        f"fetching age_private_key from 1Password item '{item_ref}' …"
-    )
+    print(f"fetching age_private_key from 1Password item '{item_ref}' …")
     try:
         priv = exporter.get_item_field_value(item_ref, "age_private_key")
     except Exception as e:
@@ -194,9 +192,7 @@ def sync_keychain() -> bool:
         priv = None
     if priv:
         try:
-            store_passphrase_in_keychain(
-                kc_service, "age_private_key", priv
-            )
+            store_passphrase_in_keychain(kc_service, "age_private_key", priv)
             print(
                 f"  ✓ stored in keychain "
                 f"(service={kc_service!r} account='age_private_key')"
@@ -206,28 +202,6 @@ def sync_keychain() -> bool:
             print(f"  ✗ keychain write failed: {e}", file=sys.stderr)
     else:
         print("  ✗ no age_private_key found in 1Password item")
-
-    # passphrase
-    print(
-        f"fetching {pass_field!r} from 1Password item '{item_ref}' …"
-    )
-    try:
-        pp = exporter.get_item_field_value(item_ref, pass_field)
-    except Exception as e:
-        print(f"  ✗ failed: {e}", file=sys.stderr)
-        pp = None
-    if pp:
-        try:
-            store_passphrase_in_keychain(kc_service, kc_username, pp)
-            print(
-                f"  ✓ stored in keychain "
-                f"(service={kc_service!r} account={kc_username!r})"
-            )
-            synced += 1
-        except Exception as e:
-            print(f"  ✗ keychain write failed: {e}", file=sys.stderr)
-    else:
-        print(f"  ✗ no {pass_field!r} found in 1Password item")
 
     if synced:
         print(f"synced {synced} credential(s) to keychain")

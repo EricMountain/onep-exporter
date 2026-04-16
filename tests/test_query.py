@@ -185,14 +185,8 @@ def test_resolve_decrypt_credentials_order(monkeypatch, tmp_path):
     assert pp is None
     monkeypatch.delenv("AGE_IDENTITIES")
 
-    # 2. env var BACKUP_PASSPHRASE is next
-    monkeypatch.setenv("BACKUP_PASSPHRASE", "secret123")
-    ids, pp = _resolve_decrypt_credentials({"age": {}}, verbose=False)
-    assert ids is None
-    assert pp == "secret123"
-    monkeypatch.delenv("BACKUP_PASSPHRASE")
-
-    # 3. keychain private key takes priority over 1Password
+    
+    # 2. keychain private key takes priority over 1Password
     called_1p = False
     def fake_keychain(service, username):
         if username == "age_private_key":
@@ -216,7 +210,7 @@ def test_resolve_decrypt_credentials_order(monkeypatch, tmp_path):
     except Exception:
         pass
 
-    # 4. if keychain is empty, falls back to 1Password
+    # 3. if keychain is empty, falls back to 1Password
     def empty_keychain(service, username):
         return None
     monkeypatch.setattr(
@@ -235,7 +229,7 @@ def test_resolve_decrypt_credentials_order(monkeypatch, tmp_path):
     except Exception:
         pass
 
-    # 5. returns (None, None) when nothing is available
+    # 4. returns (None, None) when nothing is available
     monkeypatch.setattr(
         "onep_exporter.keychain.get_passphrase_from_keychain", empty_keychain)
     def fake_op_empty(self, item_ref, field_name=None):

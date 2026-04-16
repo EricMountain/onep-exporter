@@ -143,46 +143,11 @@ def doctor() -> bool:
     # Age-specific checks
     age_cfg = (cfg.get("age", {}) if cfg else {}) or {}
     if age_cfg:
-        print(_color("\nAge/passphrase checks:", "1;34"))
-        pass_source = age_cfg.get("pass_source")
-        if pass_source:
-            _ok(f"age.pass_source={pass_source}")
-            if pass_source == "keychain":
-                try:
-                    import keyring  # type: ignore
+        print(_color("\nAge checks:", "1;34"))
 
-                    _ok("keyring available for keychain access")
-                except Exception:
-                    if (
-                        sys.platform == "darwin"
-                        and ensure_tool("security")
-                    ):
-                        _ok(
-                            "macOS `security` available for keychain access"
-                        )
-                    else:
-                        _err(
-                            "keychain pass_source configured but "
-                            "keyring/security not available"
-                        )
-                        ok = False
-            if pass_source == "env":
-                if os.environ.get("BACKUP_PASSPHRASE"):
-                    _ok("BACKUP_PASSPHRASE present in environment")
-                else:
-                    _warn(
-                        "age.pass_source=env but BACKUP_PASSPHRASE is not set"
-                    )
         recipients = (age_cfg.get("recipients") or "").strip()
         if recipients:
             _ok("age.recipients configured")
-
-        if pass_source and recipients:
-            _err(
-                "age.pass_source and age.recipients are both set; age does "
-                "not permit a passphrase together with explicit recipients"
-            )
-            ok = False
 
     # final summary
     print(_color("\n" + "─" * 52, "36"))
